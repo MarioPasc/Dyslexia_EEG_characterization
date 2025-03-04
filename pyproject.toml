@@ -1,0 +1,36 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools", "wheel"]
+
+[project]
+authors = [{name = "Mario Pascual Gonzalez", email = "mario.pg02@gmail.com"}]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "numpy",
+  "scipy",
+  "matplotlib",
+]
+description = "A Python library that contains all the functions used to perform experiments on EEG data for the analysis and characterization of Developmental Dyslexia (DD)."
+keywords = ["eeg", "machine learning", "recurrence analysis"]
+license = {file = "LICENSE"}
+name = "pyddeeg"
+readme = "README.md"
+requires-python = ">=3.10"
+version = "0.1.0"
+
+[project.urls]
+"Repository" = "https://github.com/MarioPasc/Dyslexia_EEG_characterization"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line_length = 88
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module = "scipy.*"

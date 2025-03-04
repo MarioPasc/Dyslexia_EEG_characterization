@@ -15,7 +15,7 @@ To characterize the temporal windows based on the chosen exposure frequency, Rec
 ## Objectives for this week
 
 - [ ] Analyze RQA paper [Orlando, G., & Zimatore, G. (2018). RQA correlations on real business cycles time series. SSRN.](https://d1wqtxts1xzle7.cloudfront.net/70687546/0035-0041-libre.pdf?1636043587=&response-content-disposition=inline%3B+filename%3DRQA_correlations_on_real_business_cycles.pdf&Expires=1741034001&Signature=JjT~qvESm9uqVV2j-EEMqEvIa~wGZxN71NPq8laB2uUZUGfJdjj~J7XsR5j2MVdeDRaDCbaLZ3YUS~2TzKEFreurwGI2H~fdaqpPO-6g~m47ggITqVO~L-v1toLR4BHeZbi0vWskVRvO8yH1hAJn~XtmPsGZhDu5HqYMWxAB6ynScWboyLoZVS5PZU8yPYPXTx45m9r5Kvm7sjf95YqIvckKu0Cj9rIUIt5ggSuUcXgzSdTji-osrHnJ-pE7IkTEAg~UuHhsNEYN8eqwwsNJ3eotpjbl-oozxY7lL6GuNFBJhysXz7nxxytf1iXKgRXnbnsjRNjvBXoiEa8hBSKAnQ__&Key-Pair-Id=APKAJLOHF5GGSLRBV4ZA):
-  - [ ] Generate artifical data to simulate a signal whose mean and variance change in time: $\phi(t) \space / \space \mu_{\phi}(t), \space \sigma_{\phi}(t)$.
+  - [X] Generate artifical data to simulate a signal whose mean and variance change in time: $\phi(t) \space / \space \mu_{\phi}(t), \space \sigma_{\phi}(t)$.
   - [ ] Code the RQE metric to get a similar result as the paper
 - [ ] Write a summary about the workflow intended for the project.
 
@@ -25,4 +25,3 @@ To characterize the temporal windows based on the chosen exposure frequency, Rec
 |------------|----------------------------|------------|--------------|-------|
 | 2025-03-03 | First meeting with Ignacio      | 2.5        | Meetings | The basis of the project where settled, including the input data and methodology |
 | 2025-03-03 | Bibliography review                | 1.0        | Research              |       |
-
