@@ -31,13 +31,16 @@ import scipy.stats as stats
 
 import matplotlib.pyplot as plt
 from typing import Dict, Tuple
+import scienceplots  # type: ignore
+
+plt.style.use(["science", "ieee", "std-colors"])
 
 
 def synthetic_signal_gen(
     characteristics: Dict[Tuple[int, int], Dict[str, float]],
     base_mean: float = 0.0,
     base_std: float = 1.0,
-    pdf_function = stats.norm
+    pdf_function=stats.norm,
 ):
     """
     Generate a synthetic signal by first creating a single original random signal e ~ N(base_mean, base_std^2)
@@ -71,6 +74,10 @@ def synthetic_signal_gen(
     final_sig = np.zeros_like(original_sig)
     piecewise_means = np.zeros_like(original_sig)
     piecewise_vars = np.zeros_like(original_sig)
+    mean_only_sig = np.zeros_like(original_sig)
+    std_only_sig = np.zeros_like(original_sig)
+
+    results = {}
 
     # 5) For each segment, scale and shift the original signal
     for (start, end), params in characteristics.items():
@@ -82,54 +89,96 @@ def synthetic_signal_gen(
         piecewise_means[mask] = seg_mean
         piecewise_vars[mask] = seg_std
 
+        # Only mean
+        mean_only_sig[mask] = original_sig[mask] + seg_mean
+
+        # Only std
+        std_only_sig[mask] = original_sig[mask] * seg_std
+
         # final signal: e * seg_std + seg_mean
         final_sig[mask] = original_sig[mask] * seg_std + seg_mean
 
-    return t, original_sig, piecewise_means, piecewise_vars, final_sig
+        results[f"{start},{end}"] = {
+            "piecewise_means": seg_mean,
+            "piecewise_vars": seg_std,
+            "mean_only_sig": original_sig[mask] + seg_mean,
+            "std_only_sig": original_sig[mask] * seg_std,
+            "final_sig": original_sig[mask] * seg_std + seg_mean,
+        }
+
+    return t, original_sig, final_sig, results
 
 
-def plot_four_panel(
-    t: np.ndarray,
-    original_sig: np.ndarray,
-    piecewise_means: np.ndarray,
-    piecewise_vars: np.ndarray,
-    final_sig: np.ndarray,
+def plot_piecewise_mean_std(
+    t: np.ndarray, original_sig: np.ndarray, results: dict, save=None
 ):
     """
-    Create a 2×2 figure, clockwise:
-      1. Original signal (top-left)
-      2. Piecewise means (top-right)
-      3. Piecewise variances (bottom-left)
-      4. Final signal (bottom-right)
+    Reconstruct the 'mean_only_sig' and 'std_only_sig' from the piecewise 'results' dict,
+    then overlay their piecewise lines (means and stds).
+
+    Creates two subplots:
+      - Top:    Mean-only signal + piecewise means
+      - Bottom: Std-only signal + piecewise std
     """
-    fig, axes = plt.subplots(2, 2, figsize=(10, 6))
-    fig.suptitle("Clockwise: Original, Mean Jumps, Variances, and Final Signal")
+    # Prepare empty arrays to hold the reconstructed signals
+    mean_only_sig = np.zeros_like(original_sig)
+    std_only_sig = np.zeros_like(original_sig)
+    piecewise_means = np.zeros_like(original_sig)
+    piecewise_stds = np.zeros_like(original_sig)
+    final_signal = np.zeros_like(original_sig)
 
-    # Top-left: Original signal
-    axes[0, 0].plot(t, original_sig, color="C0")
-    axes[0, 0].set_title("Original Signal")
-    axes[0, 0].set_xlabel("Time")
-    axes[0, 0].set_ylabel("Amplitude")
+    # Rebuild continuous arrays from 'results'
+    for key, val in results.items():
+        # Parse "start,end"
+        start_str, end_str = key.split(",")
+        start, end = int(start_str), int(end_str)
+        mask = (t >= start) & (t < end)
 
-    # Top-right: Piecewise means
-    axes[0, 1].plot(t, piecewise_means, color="C1")
-    axes[0, 1].set_title("Means")
-    axes[0, 1].set_xlabel("Time")
-    axes[0, 1].set_ylabel("Mean Value")
+        mean_only_sig[mask] = val["mean_only_sig"]
+        std_only_sig[mask] = val["std_only_sig"]
 
-    # Bottom-left: Piecewise variances
-    axes[1, 0].plot(t, piecewise_vars, color="C2")
-    axes[1, 0].set_title("Variances")
-    axes[1, 0].set_xlabel("Time")
-    axes[1, 0].set_ylabel("Variance")
+        # 'piecewise_means' and 'piecewise_stds' are constants in each interval
+        piecewise_means[mask] = val["piecewise_means"]
+        piecewise_stds[mask] = val["piecewise_vars"]  # Actually the std
 
-    # Bottom-right: Final signal
-    axes[1, 1].plot(t, final_sig, color="C3")
-    axes[1, 1].set_title("Final Signal")
-    axes[1, 1].set_xlabel("Time")
-    axes[1, 1].set_ylabel("Amplitude")
+        final_signal[mask] = val["final_sig"]
 
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    # Plot
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharex=True, sharey=True)
+
+    ax_original = axes[0, 0]
+    ax_original.plot(t, original_sig, label="Original signal", color="C0")
+    ax_original.set_title("Original Signal")
+    ax_original.set_ylabel("Amplitude")
+    ax_original.legend()
+
+    ax_final = axes[1, 1]
+    ax_final.plot(t, final_signal, label="Final signal", color="C0")
+    ax_final.set_title("Final Signal")
+    ax_final.set_xlabel("Time")
+    ax_final.legend()
+
+    ax_mean = axes[0, 1]
+    # 1) Mean-only subplot
+    ax_mean.plot(t, mean_only_sig, label="Mean-Only Signal", color="C1")
+    # Overlay the piecewise means (as a step or line)
+    ax_mean.plot(t, piecewise_means, label="Piecewise Mean", color="red", linewidth=2)
+    ax_mean.set_title("Mean-Only Signal with Piecewise Means")
+    ax_mean.legend()
+
+    ax_std = axes[1, 0]
+    # 2) Std-only subplot
+    ax_std.plot(t, std_only_sig, label="Std-Only Signal", color="C1")
+    # Overlay piecewise std
+    ax_std.plot(t, piecewise_stds, label="Piecewise Std", color="red", linewidth=2)
+    ax_std.set_title("Std-Only Signal with Piecewise Std")
+    ax_std.set_xlabel("Time")
+    ax_std.set_ylabel("Amplitude")
+    ax_std.legend()
+
+    plt.tight_layout()
+    if save:
+        plt.savefig(save, format="svg")
     plt.show()
 
 
@@ -150,9 +199,9 @@ if __name__ == "__main__":
     }
 
     # Generate signals
-    t, orig_sig, means, variances, final_sig = synthetic_signal_gen(
-        characteristics_example
+    t, orig_sig, final_sig, results = synthetic_signal_gen(
+        characteristics=characteristics_example,  # type: ignore
+        base_mean=0,
+        base_std=0.5,
+        pdf_function=stats.norm,
     )
-
-    # Plot the 2×2 figure
-    plot_four_panel(t, orig_sig, means, variances, final_sig)

@@ -2,6 +2,7 @@ from pyddeeg.utils.synthetic_signal_generator import synth_eeg, synth_signal
 from pyddeeg.signal_processing.rqa import rqe_correlation_index, rqe_analysis
 
 import scipy.stats as stats
+import numpy as np
 
 import matplotlib.pyplot as plt
 import scienceplots  # type: ignore
@@ -26,7 +27,16 @@ if __name__ == "__main__":
     }
 
     # Generate the synthetic signal using scipy.stats.norm as the PDF.
-    timestamps, signal = synth_signal.synthetic_signal_gen(stats.norm, characteristics)
+    timestamps, orig_sig, signal, results = synth_signal.synthetic_signal_gen(
+        characteristics=characteristics,
+        base_mean=0,
+        base_std=0.5,
+        pdf_function=stats.norm,
+    )
+
+    synth_signal.plot_piecewise_mean_std(
+        t=timestamps, original_sig=orig_sig, results=results, save="./scripts/panel.svg"
+    )
 
     # Parameters from the paper
     window_size = 50
