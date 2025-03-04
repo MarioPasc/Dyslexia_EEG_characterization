@@ -24,4 +24,5 @@ To characterize the temporal windows based on the chosen exposure frequency, Rec
 | Date       | Task Description            | Hours Spent | Category/Type | Notes |
 |------------|----------------------------|------------|--------------|-------|
 | 2025-03-03 | First meeting with Ignacio      | 2.5        | Meetings | The basis of the project where settled, including the input data and methodology |
-| 2025-03-03 | Bibliography review                | 1.0        | Research              |       |
+| 2025-03-03 | Bibliography review             | 1.0        | Research              |       |
+| 2025-03-04 | Signal generator and RQE metric | 2.0        | Research/Code              |       |

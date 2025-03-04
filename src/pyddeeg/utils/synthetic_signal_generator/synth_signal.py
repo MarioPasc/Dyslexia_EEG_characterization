@@ -1,4 +1,34 @@
+#!/usr/bin/env python3
+"""
+Simulate a synthetic signal with Time-Varying Characteristics.
+
+This module provides a function, `synthetic_signal_gen` which provides the functioanlity to generate a synthetic signal
+which follows a given distribution. The final output is a time array and the corresponding signal array.
+
+Example usage:
+    characteristics_example = {
+        (0, 100): {"mean": 0, "std": 1.0},
+        (101, 140): {"mean": 1, "std": 1},
+        (141, 200): {"mean": 1, "std": 4},
+        (201, 280): {"mean": 4, "std": 4},
+        (281, 300): {"mean": 4, "std": 6},
+        (301, 400): {"mean": -5, "std": 6},
+        (401, 420): {"mean": 2, "std": 6},
+        (421, 500): {"mean": 2, "std": 1},
+        (501, 560): {"mean": 0, "std": 1},
+        (561, 600): {"mean": 0, "std": 3},
+        (601, 700): {"mean": 1, "std": 3},
+    }
+
+    # Generate signals
+    t, orig_sig, means, variances, final_sig = synthetic_signal_gen(
+        characteristics_example
+    )
+"""
+
 import numpy as np
+import scipy.stats as stats
+
 import matplotlib.pyplot as plt
 from typing import Dict, Tuple
 
@@ -7,6 +37,7 @@ def synthetic_signal_gen(
     characteristics: Dict[Tuple[int, int], Dict[str, float]],
     base_mean: float = 0.0,
     base_std: float = 1.0,
+    pdf_function = stats.norm
 ):
     """
     Generate a synthetic signal by first creating a single original random signal e ~ N(base_mean, base_std^2)
@@ -34,7 +65,7 @@ def synthetic_signal_gen(
     t = np.arange(global_start, global_end)
 
     # 3) Generate the original random signal e ~ N(base_mean, base_std^2) over the entire time span
-    original_sig = np.random.normal(loc=base_mean, scale=base_std, size=len(t))
+    original_sig = pdf_function.rvs(loc=base_mean, scale=base_std, size=len(t))
 
     # 4) Initialize arrays for the final signal, piecewise means, and piecewise variances
     final_sig = np.zeros_like(original_sig)
@@ -49,7 +80,7 @@ def synthetic_signal_gen(
 
         # piecewise mean, piecewise variance
         piecewise_means[mask] = seg_mean
-        piecewise_vars[mask] = seg_std**2
+        piecewise_vars[mask] = seg_std
 
         # final signal: e * seg_std + seg_mean
         final_sig[mask] = original_sig[mask] * seg_std + seg_mean
