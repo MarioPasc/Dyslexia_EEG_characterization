@@ -1,5 +1,5 @@
 from pyddeeg.utils.synthetic_signal_generator import synth_eeg, synth_signal
-from pyddeeg.signal_processing.rqa import rqe_correlation_index, rqe_analysis
+from pyddeeg.signal_processing.rqa_toolbox import rqe_correlation_index, rqe_analysis
 
 import scipy.stats as stats
 import numpy as np
