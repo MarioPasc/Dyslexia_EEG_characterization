@@ -71,6 +71,7 @@ if __name__ == "__main__":
     plt.title("Original Signal")
     plt.xlabel("Time")
     plt.ylabel("Amplitude")
+    plt.ylim([10, -15])
 
     plt.subplot(3, 1, 2)
     plt.plot(epochs_timestamps, rqa_measures["DET"], label="DET")
