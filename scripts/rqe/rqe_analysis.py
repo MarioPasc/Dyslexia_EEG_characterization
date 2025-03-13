@@ -425,11 +425,11 @@ if __name__ == "__main__":
         radius=70.0,  # "Radius"
         time_delay=1,  # "Shift"
         raw_signal_window_size=50,  # "Epoch"
+        rqa_space_window_size=55,  # Big window for correlation in RQA domain
         distance_metric="meandist",  # "Distance"
         min_diagonal_line=5,  # "Line"
         min_vertical_line=1,
         min_white_vertical_line=1,
-        rqa_space_window_size=55,  # Big window for correlation in RQA domain
         simulate_length=700,  # Enough length to produce some variety
         stride=1,
     )

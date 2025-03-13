@@ -19,6 +19,7 @@ dependencies = [
   "Scikit-Learn",
   "dask",
   "PyYAML",
+  "distributed",
 ]
 description = "A Python library that contains all the functions used to perform experiments on EEG data for the analysis and characterization of Developmental Dyslexia (DD)."
 keywords = ["eeg", "machine learning", "recurrence analysis"]

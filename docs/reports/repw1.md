@@ -1,7 +1,5 @@
 # Report week 1
 
-[TOC]
-
 ## Project summary
 
 This project focuses on the classification of electroencephalograms (EEG) from healthy children (CN) versus children with Developmental Dyslexia (DD). The patients are exposed to a prolonged white noise stimulus at specific frequencies (4 Hz, 16 Hz, and 40 Hz) for 2.5 minutes each, in both ascending and descending order, with each test lasting a total of 2.5 × 6 minutes. During this period, brain activity is recorded using a 32-channel EEG (31 + control). The study aims to analyze a specific frequency band from each EEG channel, either the theta or gamma band.
