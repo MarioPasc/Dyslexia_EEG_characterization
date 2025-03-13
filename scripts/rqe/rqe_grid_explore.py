@@ -570,8 +570,8 @@ def create_rqe_grid_visualization_parallel(
 # Example usage
 if __name__ == "__main__":
     # Define lists of window sizes to test
-    raw_window_sizes = [30, 50, 70, 90]
-    rqa_window_sizes = [30, 50, 70, 90]
+    raw_window_sizes = [10, 50, 100, 150]
+    rqa_window_sizes = [10, 20, 30, 40]
 
     # Create grid visualization with parallel processing
     output_dir = create_rqe_grid_visualization_parallel(
