@@ -1,12 +1,12 @@
 # EEG Preprocessing Configuration
 
 # Data paths
-data_dir: "/path/to/data/timeseries"  # Replace with your actual data directory
-output_dir: "./preprocessed_data"     # Output directory for preprocessed files
+data_dir: "/home/mariopasc/Python/Datasets/EEG/timeseries/original"        # Replace with your actual data directory
+output_dir: "/home/mariopasc/Python/Datasets/EEG/timeseries/processed"     # Output directory for preprocessed files
 
 # Processing parameters
 age: "7"           # Age group
-stim: "2"          # Stimulus type
+stim: "20"          # Stimulus type
 sampling_freq: 500 # Sampling frequency in Hz
 nframes: 10        # Number of frames
 speed: "fast"      # Processing speed: "slow" or "fast"
@@ -23,6 +23,8 @@ eeg_bands:
   Gamma: [30, 80]
 
 # Channel names
+# The reference channel should always be the last one
+# in our case, Cz channel
 ch_names:
   - "Fp1"
   - "Fp2"

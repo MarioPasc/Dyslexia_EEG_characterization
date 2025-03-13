@@ -75,6 +75,6 @@ def zerolag_bpfir2(
         ax.grid(True)
         ax.set(title=f"Band-pass {f0}-{f1} Hz\nfc={fc:.2f} Hz")
         fig.tight_layout()
-        plt.show()
+        plt.savefig(f"../assets/bandpass_{f0}_{f1}.svg")
 
     return filtered

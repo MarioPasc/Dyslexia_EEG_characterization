@@ -22,7 +22,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
-from .tools.zerolag_bpfir2 import zerolag_bpfir2
+from pyddeeg.signal_processing.preprocessing.tools import zerolag_bpfir2
 
 # Optional imports for accelerated processing
 try:
@@ -170,7 +170,8 @@ def data_preprocessing(data_x: np.ndarray, config: EEGConfig) -> np.ndarray:
         for band_idx, (band, freq_range) in enumerate(config.eeg_bands.items()):
             fc = (freq_range[1] - freq_range[0]) / 2
 
-            for c in range(data_x.shape[1]):
+            # data_x.shape[1] - 1 to exlucde the Cz channel from being bandfiltered
+            for c in range(data_x.shape[1] - 1):
                 data_x_f[s, c, :, band_idx] = zerolag_bpfir2(
                     data_x[s, c, :],
                     fc,
@@ -223,7 +224,8 @@ def _accelerated_preprocessing(data_x: np.ndarray, config: EEGConfig) -> np.ndar
             for band_idx, (band, freq_range) in enumerate(config.eeg_bands.items()):
                 fc = (freq_range[1] - freq_range[0]) / 2
 
-                for c in range(chunk_data.shape[1]):
+                # Same change as the slow mode, ignore the Cz channel when doing the bandpass filter
+                for c in range(chunk_data.shape[1] - 1):
                     result[s, c, :, band_idx] = zerolag_bpfir2(
                         scaled_data[c, :],
                         fc,
@@ -329,19 +331,19 @@ def main(config_path: str) -> None:
     logger.info(f"Saving preprocessed data to {output_dir}")
 
     np.savez(
-        os.path.join(output_dir, f"CT_UP_preprocess_{config.nframes}.npz"),
+        os.path.join(output_dir, f"CT_UP_preprocess_{config.stim}.npz"),
         data=data_c_up_f,
     )
     np.savez(
-        os.path.join(output_dir, f"CT_DOWN_preprocess_{config.nframes}.npz"),
+        os.path.join(output_dir, f"CT_DOWN_preprocess_{config.stim}.npz"),
         data=data_c_down_f,
     )
     np.savez(
-        os.path.join(output_dir, f"DD_UP_preprocess_{config.nframes}.npz"),
+        os.path.join(output_dir, f"DD_UP_preprocess_{config.stim}.npz"),
         data=data_d_up_f,
     )
     np.savez(
-        os.path.join(output_dir, f"DD_DOWN_preprocess_{config.nframes}.npz"),
+        os.path.join(output_dir, f"DD_DOWN_preprocess_{config.stim}.npz"),
         data=data_d_down_f,
     )
 
