@@ -16,6 +16,9 @@ dependencies = [
   "scienceplots",
   "pyunicorn",
   "pandas",
+  "Scikit-Learn",
+  "dask",
+  "PyYAML",
 ]
 description = "A Python library that contains all the functions used to perform experiments on EEG data for the analysis and characterization of Developmental Dyslexia (DD)."
 keywords = ["eeg", "machine learning", "recurrence analysis"]
@@ -36,4 +39,4 @@ line_length = 88
 
 [[tool.mypy.overrides]]
 ignore_missing_imports = true
-module = ["scipy.*", "pyddeeg.*", "scienceplots", "pyunicorn.*"]
+module = ["scipy.*", "pyddeeg.*", "scienceplots", "pyunicorn.*", "sklearn.*", "tqdm", "yaml"]

@@ -44,6 +44,10 @@ R = [
 ]
 ```
 
+Lenta: proxoria 
+Media: silábica 
+Rápida: fonema (40)
+
 The second window of size \(B\) (big window size) operates on the RQA metrics matrix \(R\). For each position of this window, Spearman rank correlations (\(\rho\)) are computed between all pairs of RQA metrics within the window.
 
 For a window starting at position \(k\), the RQE value is calculated as:

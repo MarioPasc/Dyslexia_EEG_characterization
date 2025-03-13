@@ -1,0 +1,58 @@
+# EEG Preprocessing Configuration
+
+# Data paths
+data_dir: "/path/to/data/timeseries"  # Replace with your actual data directory
+output_dir: "./preprocessed_data"     # Output directory for preprocessed files
+
+# Processing parameters
+age: "7"           # Age group
+stim: "2"          # Stimulus type
+sampling_freq: 500 # Sampling frequency in Hz
+nframes: 10        # Number of frames
+speed: "fast"      # Processing speed: "slow" or "fast"
+
+# Visualization options
+show_filter_response: false  # Set to true to visualize filter responses
+
+# EEG bands in Hz
+eeg_bands:
+  Delta: [0.5, 4]
+  Theta: [4, 8]
+  Alpha: [8, 12]
+  Beta: [12, 30]
+  Gamma: [30, 80]
+
+# Channel names
+ch_names:
+  - "Fp1"
+  - "Fp2"
+  - "F7"
+  - "F3"
+  - "Fz"
+  - "F4"
+  - "F8"
+  - "FC5"
+  - "FC1"
+  - "FC2"
+  - "FC6"
+  - "T7"
+  - "C3"
+  - "C4"
+  - "T8"
+  - "TP9"
+  - "CP5"
+  - "CP1"
+  - "CP2"
+  - "CP6"
+  - "TP10"
+  - "P7"
+  - "P3"
+  - "Pz"
+  - "P4"
+  - "P8"
+  - "PO9"
+  - "O1"
+  - "Oz"
+  - "O2"
+  - "PO10"
+  - "Cz"
