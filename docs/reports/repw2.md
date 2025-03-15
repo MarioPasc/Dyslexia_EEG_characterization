@@ -26,4 +26,5 @@ On the other hand, a smaller context window in the temporal domain could bias th
 |------------|----------------------------|------------|--------------|-------|
 | 2025-13-03 | Meeting with Ignacio      | 1.0        | Meetings | EEG database was explained |
 | 2025-13-03 | Sliding window analysis      | 2.0        | Code/Research |  |
-| 2025-13-03 | EEG Preprocessing parallelization      | 1.0        | Code |  |
+| 2025-13-03 | Zerolag EEG Preprocessing parallelization      | 1.0        | Code |  |
+| 2025-13-03 | RQE EEG Preprocessing parallelization      | 6.0        | Research/Code | The window size effect on final data was explored |
