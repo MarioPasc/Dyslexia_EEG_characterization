@@ -1,0 +1,54 @@
+# Configuration for EEG RQE Processing
+
+# Dask configuration
+dask:
+  n_workers: -1               # Number of workers (-1 = auto)
+  threads_per_worker: 1       # Threads per worker
+  memory_limit: "3GB"         # Memory limit per worker (reduce from 4GB to 3GB)
+
+# Directories
+input_directory: "/home/mariopasc/Python/Datasets/EEG/timeseries/processed/zerolag"  # Directory containing zerolag preprocessed files
+output_directory: "/home/mariopasc/Python/Datasets/EEG/timeseries/processed/rqe"      # Output directory for RQE files
+
+# Logging
+logging:
+  directory: "./logs"
+  level: "INFO"
+
+# Datasets to process
+datasets:
+  CT_UP: "CT_UP_preprocess_2.npz"
+  DD_UP: "DD_UP_preprocess_2.npz"
+  CT_DOWN: "CT_DOWN_preprocess_2.npz"
+  DD_DOWN: "DD_DOWN_preprocess_2.npz"
+
+# RQA/RQE parameters
+rqa_parameters:
+  embedding_dim: 10
+  radius: 0.8
+  time_delay: 1
+  raw_signal_window_size: 100
+  rqa_space_window_size: 25
+  min_diagonal_line: 5
+  min_vertical_line: 1
+  min_white_vertical_line: 1
+  stride: 7
+  metrics_to_use:
+    - "RR"
+    - "DET"
+    - "L_max"
+    - "L_mean"
+    - "ENT"
+    - "LAM"
+    - "TT"
+    - "V_max"
+    - "V_mean"
+    - "V_ENT"
+    - "W_max"
+    - "W_mean"
+    - "W_ENT"
+    - "CLEAR"
+    - "PERM_ENT"
+
+# Whether to normalize metrics before RQE computation
+normalize_metrics: true
