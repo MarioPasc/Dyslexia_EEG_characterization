@@ -52,9 +52,18 @@ def compute_rqa_metrics_for_window(
     min_diagonal_line: int = 2,
     min_vertical_line: int = 2,
     min_white_vertical_line: int = 1,
+    metrics_to_use: List[str] = [
+        "RR",
+        "DET",
+        "L_max",
+        "L_mean",
+        "ENT",
+        "LAM",
+        "TT",
+    ],
 ) -> dict:
     """
-    Compute comprehensive RQA metrics from a single window of the raw EEG signal
+    Compute only the requested RQA metrics from a single window of the raw EEG signal
     using pyunicorn's RecurrencePlot.
     """
     if RecurrencePlot is None:
@@ -62,13 +71,14 @@ def compute_rqa_metrics_for_window(
             "pyunicorn is not available. Install with pip install pyunicorn."
         )
 
+    if metrics_to_use is None:
+        metrics_to_use = ["RR", "DET", "L_max", "L_mean", "ENT", "LAM", "TT"]
+
     if distance_metric.lower() == "meandist":
-        # Calculate pairwise distances
         from scipy.spatial.distance import pdist
 
         distances = pdist(window_signal.reshape(-1, 1), metric="euclidean")
         mean_dist = np.mean(distances)
-        # Normalize radius by mean distance
         normalized_radius = radius / mean_dist
         actual_radius = normalized_radius
         distance_metric = "euclidean"
@@ -84,29 +94,36 @@ def compute_rqa_metrics_for_window(
         silence_level=2,
     )
 
-    # Compute all available RQA metrics
-    metrics = {
-        "RR": rp.recurrence_rate(),
-        "DET": rp.determinism(l_min=min_diagonal_line),
-        "L_max": rp.max_diaglength(),
-        "L_mean": rp.average_diaglength(l_min=min_diagonal_line),
-        "ENT": rp.diag_entropy(l_min=min_diagonal_line),
-        "LAM": rp.laminarity(v_min=min_vertical_line),
-        "TT": rp.trapping_time(v_min=min_vertical_line),
-        # Additional line-based measures
-        "V_max": rp.max_vertlength(),
-        "V_mean": rp.average_vertlength(v_min=min_vertical_line),
-        "V_ENT": rp.vert_entropy(v_min=min_vertical_line),
-        # White vertical line measures
-        "W_max": rp.max_white_vertlength(),
-        "W_mean": rp.average_white_vertlength(w_min=min_white_vertical_line),
-        "W_ENT": rp.white_vert_entropy(w_min=min_white_vertical_line),
-        # Complexity measures
-        "CLEAR": rp.complexity_entropy() if hasattr(rp, "complexity_entropy") else None,
-        "PERM_ENT": (
+    # Define metric computation functions
+    metric_functions = {
+        "RR": lambda: rp.recurrence_rate(),
+        "DET": lambda: rp.determinism(l_min=min_diagonal_line),
+        "L_max": lambda: rp.max_diaglength(),
+        "L_mean": lambda: rp.average_diaglength(l_min=min_diagonal_line),
+        "ENT": lambda: rp.diag_entropy(l_min=min_diagonal_line),
+        "LAM": lambda: rp.laminarity(v_min=min_vertical_line),
+        "TT": lambda: rp.trapping_time(v_min=min_vertical_line),
+        "V_max": lambda: rp.max_vertlength(),
+        "V_mean": lambda: rp.average_vertlength(v_min=min_vertical_line),
+        "V_ENT": lambda: rp.vert_entropy(v_min=min_vertical_line),
+        "W_max": lambda: rp.max_white_vertlength(),
+        "W_mean": lambda: rp.average_white_vertlength(w_min=min_white_vertical_line),
+        "W_ENT": lambda: rp.white_vert_entropy(w_min=min_white_vertical_line),
+        "CLEAR": lambda: (
+            rp.complexity_entropy() if hasattr(rp, "complexity_entropy") else None
+        ),
+        "PERM_ENT": lambda: (
             rp.permutation_entropy() if hasattr(rp, "permutation_entropy") else None
         ),
     }
+
+    # Only compute requested metrics
+    metrics = {}
+    for metric in metrics_to_use:
+        if metric in metric_functions:
+            metrics[metric] = metric_functions[metric]()
+        else:
+            metrics[metric] = None  # Handle unknown metrics gracefully
 
     return metrics
 
@@ -122,7 +139,7 @@ def compute_rqa_time_series(
     min_vertical_line: int,
     min_white_vertical_line: int,
     metrics_to_use: List[str],
-    stride: int = 0,  # If stride == 0 then we are replicating the exact RQE definition from the paper.
+    stride: int = 1,  # If stride == 1 then we are replicating the exact RQE definition from the paper.
 ) -> np.ndarray:
     """
     Slide a small window of size 'raw_signal_window_size' over the raw signal, compute RQA
@@ -144,6 +161,7 @@ def compute_rqa_time_series(
             min_diagonal_line=min_diagonal_line,
             min_vertical_line=min_vertical_line,
             min_white_vertical_line=min_white_vertical_line,
+            metrics_to_use=metrics_to_use,  # Pass the metrics list
         )
 
         # Extract only the metrics we asked for
@@ -254,17 +272,17 @@ def main(
     # ------------------------------------------------------------------
     # 1) Generate a synthetic raw signal with some variability
     characteristics = {
-        (0, 100): {"mean": 0, "std": 1},
-        (101, 140): {"mean": 1, "std": 1},
-        (141, 200): {"mean": 1, "std": 4},
-        (201, 280): {"mean": 4, "std": 4},
-        (281, 300): {"mean": 4, "std": 6},
-        (301, 400): {"mean": -5, "std": 6},
-        (401, 420): {"mean": 2, "std": 6},
-        (421, 500): {"mean": 2, "std": 1},
-        (501, 560): {"mean": 0, "std": 1},
-        (561, 600): {"mean": 0, "std": 3},
-        (601, 700): {"mean": 1, "std": 3},
+        (0, 100): {"mean": 0.0, "std": 1.0},
+        (101, 140): {"mean": 1.0, "std": 1.0},
+        (141, 200): {"mean": 1.0, "std": 4.0},
+        (201, 280): {"mean": 4.0, "std": 4.0},
+        (281, 300): {"mean": 4.0, "std": 6.0},
+        (301, 400): {"mean": -5.0, "std": 6.0},
+        (401, 420): {"mean": 2.0, "std": 6.0},
+        (421, 500): {"mean": 2.0, "std": 1.0},
+        (501, 560): {"mean": 0.0, "std": 1.0},
+        (561, 600): {"mean": 0.0, "std": 3.0},
+        (601, 700): {"mean": 1.0, "std": 3.0},
     }
 
     # Generate the synthetic signal using scipy.stats.norm as the PDF.

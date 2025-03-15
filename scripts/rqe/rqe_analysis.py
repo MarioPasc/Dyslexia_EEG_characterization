@@ -433,3 +433,42 @@ if __name__ == "__main__":
         simulate_length=700,  # Enough length to produce some variety
         stride=1,
     )
+
+"""
+End note: How each input parameter affects the RQE calculation:
+
+- radius: Defines the threshold for marking two points as “close” in the recurrence plot. 
+If it's too small, almost no recurrences appear; if it's too large, everything is recurrent. 
+Tuning it involves looking for a balanced recurrence rate. Using “meandist” normalizes radius 
+by the average pairwise distance, avoiding scale issues.
+
+- min_diagonal_line (l_min): Sets the minimum diagonal line length in the recurrence plot 
+to be considered for determinism. Increasing it filters out shorter “runs” of recurrent points, 
+focusing on longer structures.
+
+- min_vertical_line (v_min) & min_white_vertical_line (w_min): Similar to the diagonal 
+threshold but for vertical lines and white vertical lines, influencing laminarity and trapping 
+time metrics.
+
+- distance_metric: Controls how distances in the phase space are measured (e.g., Euclidean 
+vs. manhattan). “meandist” scales radius automatically.
+
+- embedding_dim & time_delay: Define phase-space reconstruction of the signal. If they're off, 
+the recurrence plot may be too noisy or too sparse.
+
+- raw_signal_window_size: The size of each sliding window for computing RQA metrics. Too small 
+might capture mostly noise; too large smooths out local detail.
+
+- rqa_space_window_size: The size of the “big window” over the RQA time series when computing 
+pairwise correlations. Must balance between having enough points for stable correlations and capturing 
+localized changes.
+
+- stride: Moves the raw-signal window between successive calculations. A larger stride can skip 
+data, potentially speeding up computation but missing finer detail.
+
+If only NaN is obtained, ensure the signal has enough variability, radius is not set too small/large, 
+and check for divisions by zero (e.g., in “meandist” if the data segment has zero variance). 
+Fine-tuning usually starts with adjusting radius (if using “meandist”) and verifying that the RQA windows 
+are neither too short nor too large relative to the signal length.
+
+"""

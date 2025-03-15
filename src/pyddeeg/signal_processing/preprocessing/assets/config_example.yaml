@@ -6,7 +6,7 @@ output_dir: "/home/mariopasc/Python/Datasets/EEG/timeseries/processed"     # Out
 
 # Processing parameters
 age: "7"           # Age group
-stim: "20"          # Stimulus type
+stim: "2"          # Stimulus type
 sampling_freq: 500 # Sampling frequency in Hz
 nframes: 10        # Number of frames
 speed: "fast"      # Processing speed: "slow" or "fast"
