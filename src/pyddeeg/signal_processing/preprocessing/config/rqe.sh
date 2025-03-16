@@ -11,14 +11,13 @@
 #SBATCH --mail-user=mpascual@uma.es
 
 # Load required modules
-module load python/3.10  # Adjust based on available Python versions
 module load miniconda
 source activate pyddeeg
 
 
 # Create a temp directory in localscratch
 # shellcheck disable=SC2153
-MYLOCALSCRATCH=$LOCALSCRATCH/$USER/$SLURM_JOB_ID
+MYLOCALSCRATCH=$LOCALSCRATCH$USER/$SLURM_JOB_ID
 mkdir -p "$MYLOCALSCRATCH"
 
 # Define paths
@@ -94,9 +93,6 @@ EOF
 
 # Go to working directory
 cd "$MYLOCALSCRATCH" || exit
-
-# Set Python path to include local modules
-export PYTHONPATH=$MYLOCALSCRATCH:$PYTHONPATH
 
 # Execute script with timing
 echo "Starting EEG RQE Processing at $(date)"
