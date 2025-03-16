@@ -99,7 +99,7 @@ echo "Starting EEG RQE Processing at $(date)"
 echo "Executing Python script with config $CONFIG_DIR/rqe_config.yaml"
 
 time python $PROJ_DIR/src/pyddeeg/signal_processing/preprocessing/rqe_preproc_picasso.py \
---config "$CONFIG_DIR"/hpc_config.yaml \
+--config "$CONFIG_DIR"/rqe_config.yaml \
 --cores "$SLURM_CPUS_PER_TASK"
 
 echo "Processing completed at $(date)"
