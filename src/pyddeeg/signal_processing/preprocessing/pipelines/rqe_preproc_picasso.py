@@ -13,6 +13,7 @@ import os
 import time
 from datetime import datetime
 import yaml
+import sys
 
 from typing import Dict, Tuple, Optional, Any
 
@@ -30,11 +31,27 @@ from dask import delayed
 
 import threading
 
-# Import the parallelizable RQE functions
-from pyddeeg.signal_processing.rqa_toolbox.rqe_parallelizable import (
-    process_single_channel_band,
+# Use direct import from the local directory
+# Import the RQE functions directly
+sys.path.insert(0, os.getcwd())  # Add current directory to path
+
+# Print debug information
+print("Current directory:", os.getcwd())
+print(
+    "Files in src/pyddeeg/signal_processing/rqa_toolbox:",
+    os.listdir("src/pyddeeg/signal_processing/rqa_toolbox"),
 )
 
+# Import using direct path
+try:
+    from src.pyddeeg.signal_processing.rqa_toolbox.rqe_parallelizable import (
+        process_single_channel_band,
+    )
+
+    print("Successfully imported process_single_channel_band")
+except Exception as e:
+    print(f"ERROR importing process_single_channel_band: {str(e)}")
+    sys.exit(1)
 ##### Logging functions and context manager for Dask task progress ####
 
 
