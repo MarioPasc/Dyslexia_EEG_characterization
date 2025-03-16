@@ -10,20 +10,24 @@
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=mpascual@uma.es
 
+set -e
 echo "Job started at $(date)"
 
 # Debug information
+echo "========================================="
 echo "SLURM_JOB_ID: $SLURM_JOB_ID"
 echo "SLURM_CPUS_PER_TASK: $SLURM_CPUS_PER_TASK"
 echo "SLURM_MEM_PER_NODE: $SLURM_MEM_PER_NODE"
 echo "SLURM constraint: amd"
-
+echo "========================================="
+echo
+echo "========================================="
 # Load required modules
 echo "Loading miniconda..."
 module load miniconda
 echo "Activating conda environment..."
 source activate pyddeeg
-
+echo
 # Print Python information for debugging
 which python
 python --version
@@ -42,6 +46,10 @@ try:
 except Exception as e:
     print('Error importing module:', str(e))
 "
+echo "========================================="
+echo
+echo "========================================="
+echo "Setting up local scratch directory..."
 # Fix MYLOCALSCRATCH - ensure it doesn't have double slashes
 MYLOCALSCRATCH="${LOCALSCRATCH}${USER}/${SLURM_JOB_ID}"
 # Remove any potential double slashes
@@ -127,6 +135,9 @@ EOF
 # Go to working directory
 echo "Changing to scratch directory..."
 cd "$MYLOCALSCRATCH" || { echo "Failed to change directory to $MYLOCALSCRATCH"; exit 1; }
+echo "========================================="
+echo
+echo "========================================="
 
 # Print monitoring instructions
 echo "To monitor real-time progress, use:"
@@ -163,7 +174,7 @@ else
     echo "Directory contents:"
     find "$MYLOCALSCRATCH/src/pyddeeg" -type f -name "*.py" | sort
 fi
-
+echo
 # Option 1: Use direct path execution with explicit error capture
 echo "Running script using direct path execution..."
 time python "$SCRIPT_PATH" \
