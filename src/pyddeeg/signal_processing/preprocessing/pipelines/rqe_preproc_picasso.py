@@ -988,3 +988,7 @@ def main():
         logger.error(f"Error in main process: {str(e)}", exc_info=True)
         update_status_file(status_dir, "fatal", f"Fatal error: {str(e)}")
         raise
+
+
+if __name__ == "__main__":
+    main()
