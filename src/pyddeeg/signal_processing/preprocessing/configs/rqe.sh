@@ -17,7 +17,7 @@ source activate pyddeeg
 
 # Create a temp directory in localscratch
 # shellcheck disable=SC2153
-MYLOCALSCRATCH=/mnt/home/users/tic_163_uma/mpascual/fscratch/tmp/$SLURM_JOB_ID
+MYLOCALSCRATCH=$LOCALSCRATCH$USER/$SLURM_JOB_ID
 mkdir -p "$MYLOCALSCRATCH"
 
 # Define paths
