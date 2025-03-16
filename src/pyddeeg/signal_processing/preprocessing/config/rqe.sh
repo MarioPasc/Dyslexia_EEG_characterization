@@ -33,7 +33,6 @@ mkdir -p "$OUTPUT_DIR" "$CONFIG_DIR" "$LOG_DIR"
 
 # Copy necessary files to scratch
 cp -r "$PROJ_DIR/src" "$MYLOCALSCRATCH/"
-cp "$PROJ_DIR/config.yaml" "$CONFIG_DIR/"
 
 # Create/modify config file for HPC usage
 cat > "$CONFIG_DIR"/rqe_config.yaml << EOF
@@ -71,7 +70,7 @@ rqa_parameters:
   min_diagonal_line: 5
   min_vertical_line: 1
   min_white_vertical_line: 1
-  stride: 10
+  stride: 7
   metrics_to_use:
     - "RR"
     - "DET"
