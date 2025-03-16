@@ -5,7 +5,8 @@ eeg_rqe_processor.py - HPC Version
 Process multiple EEG datasets with Recurrence Quantification Analysis (RQA) and
 Recurrence Quantification Entropy (RQE) metrics using Dask for parallelization.
 
-Optimized for execution on HPC clusters with no internet connectivity.
+Optimized for execution on high-memory HPC clusters with no internet connectivity.
+This version processes all tasks at once instead of batching by patients.
 """
 
 import os
@@ -22,25 +23,21 @@ from pathlib import Path
 import argparse
 from datetime import datetime
 
-# Import the parallelizable RQE functions - make sure the module is available on the HPC
+# Import the parallelizable RQE functions
 from pyddeeg.signal_processing.rqa_toolbox.rqe_parallelizable import (
     process_single_channel_band,
 )
 
 
-# Set up logging
 def setup_logging(log_dir: str = "./logs") -> logging.Logger:
     """Set up logging with file and console handlers."""
-    # Create log directory if it doesn't exist
     log_path = Path(log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
 
-    # Create a unique log filename with timestamp
     log_file = (
         log_path / f"rqe_processing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     )
 
-    # Configure logging
     logger = logging.getLogger("EEG_RQE_Processor")
     logger.setLevel(logging.INFO)
 
@@ -92,25 +89,24 @@ def process_channel_band_with_gc(
     return result
 
 
-def process_dataset_in_batches(
+def process_dataset_parallel(
     data: np.ndarray,
     rqa_params: Dict[str, Any],
     normalize_metrics: bool = False,
     dataset_name: str = "unknown",
     logger: Optional[logging.Logger] = None,
-    batch_size: int = 4,  # Process patients in batches
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Process an entire EEG dataset with RQA/RQE analysis using Dask for HPC.
 
-    Processes data in smaller batches to manage memory usage.
+    This version processes all tasks at once, optimized for high-memory supercomputers.
     """
     if logger is None:
         logger = logging.getLogger("EEG_RQE_Processor")
 
     n_patients, n_channels, n_samples, n_bands = data.shape
     logger.info(f"Processing dataset {dataset_name}: {data.shape}")
-    logger.info(f"Processing in batches of {batch_size} patients")
+    logger.info(f"Processing all tasks in parallel (no batching)")
 
     # Extract parameters for output shape calculation
     stride = rqa_params.get("stride", 1)
@@ -138,82 +134,91 @@ def process_dataset_in_batches(
         (n_patients, n_channels, n_bands, num_rqe_windows), np.nan
     )
 
-    total_start_time = time.time()
+    # Create Dask task graph for all tasks
+    tasks = {}
+    task_indices = []
 
-    # Process patients in batches to reduce memory pressure
-    for batch_idx in range(0, n_patients, batch_size):
-        batch_end = min(batch_idx + batch_size, n_patients)
-        logger.info(
-            f"Processing batch {batch_idx//batch_size + 1}/{(n_patients-1)//batch_size + 1} (patients {batch_idx}-{batch_end-1})"
-        )
+    # Create a progress counter
+    total_tasks = n_patients * n_channels * n_bands
+    logger.info(f"Creating {total_tasks} tasks for parallel processing")
 
-        # Create Dask task graph for this batch only
-        tasks = {}
-        task_indices = []
+    start_time = time.time()
+    task_creation_start = time.time()
 
-        for patient_idx in range(batch_idx, batch_end):
-            for channel_idx in range(n_channels):
-                for band_idx in range(n_bands):
-                    # Create a unique key for this task
-                    task_key = (patient_idx, channel_idx, band_idx)
-                    task_indices.append(task_key)
+    # Create all tasks at once
+    for patient_idx in range(n_patients):
+        for channel_idx in range(n_channels):
+            for band_idx in range(n_bands):
+                # Create a unique key for this task
+                task_key = (patient_idx, channel_idx, band_idx)
+                task_indices.append(task_key)
 
-                    # Extract signal for this patient, channel, band combination
-                    signal = data[patient_idx, channel_idx, :, band_idx].copy()
+                # Extract signal for this patient, channel, band combination
+                signal = data[patient_idx, channel_idx, :, band_idx].copy()
 
-                    # Create a delayed task with memory management
-                    tasks[task_key] = process_channel_band_with_gc(
-                        signal=signal,
-                        rqa_params=rqa_params,
-                        normalize_metrics=normalize_metrics,
-                    )
+                # Create a delayed task with memory management
+                tasks[task_key] = process_channel_band_with_gc(
+                    signal=signal,
+                    rqa_params=rqa_params,
+                    normalize_metrics=normalize_metrics,
+                )
 
-        logger.info(f"Created {len(tasks)} tasks for batch")
+    task_creation_time = time.time() - task_creation_start
+    logger.info(f"Task graph creation completed in {task_creation_time:.2f} seconds")
+    logger.info(f"Total tasks created: {len(tasks)}")
 
-        # Compute tasks for this batch
-        batch_start_time = time.time()
-        task_values = dask.compute(tasks)
-        results = task_values[0]  # Extract from tuple
-        batch_elapsed = time.time() - batch_start_time
-        logger.info(f"Batch computation completed in {batch_elapsed:.2f} seconds")
+    # Compute all tasks at once
+    compute_start = time.time()
+    logger.info(f"Starting Dask computation of all tasks")
 
-        # Populate the output arrays for this batch
-        successful_tasks = 0
-        empty_results = 0
+    # Process the tasks
+    results = dask.compute(tasks)[0]
 
-        for task_key in task_indices:
-            patient_idx, channel_idx, band_idx = task_key
-            rqa_matrix, rqe_values, corr_values = results[task_key]
+    compute_time = time.time() - compute_start
+    logger.info(f"Dask computation completed in {compute_time:.2f} seconds")
 
-            # Store RQA metrics
-            if rqa_matrix.size > 0:
-                actual_windows = min(rqa_matrix.shape[0], num_windows)
-                rqa_metrics_array[
-                    patient_idx, channel_idx, band_idx, :actual_windows, :
-                ] = rqa_matrix
-                successful_tasks += 1
-            else:
-                empty_results += 1
+    # Populate the output arrays
+    collection_start = time.time()
+    logger.info(f"Collecting results into output arrays")
 
-            # Store RQE values
-            if rqe_values.size > 0:
-                actual_rqe_windows = min(rqe_values.shape[0], num_rqe_windows)
-                rqe_values_array[
-                    patient_idx, channel_idx, band_idx, :actual_rqe_windows
-                ] = rqe_values
-                corr_values_array[
-                    patient_idx, channel_idx, band_idx, :actual_rqe_windows
-                ] = corr_values
+    successful_tasks = 0
+    empty_results = 0
 
-        logger.info(
-            f"Batch results: {successful_tasks} successful tasks, {empty_results} empty results"
-        )
+    for task_key in task_indices:
+        patient_idx, channel_idx, band_idx = task_key
+        rqa_matrix, rqe_values, corr_values = results[task_key]
 
-        # Clean up and force garbage collection between batches
-        del tasks, task_values, results
-        gc.collect()
+        # Store RQA metrics
+        if rqa_matrix.size > 0:
+            actual_windows = min(rqa_matrix.shape[0], num_windows)
+            rqa_metrics_array[
+                patient_idx, channel_idx, band_idx, :actual_windows, :
+            ] = rqa_matrix
+            successful_tasks += 1
+        else:
+            empty_results += 1
 
-    total_elapsed = time.time() - total_start_time
+        # Store RQE values
+        if rqe_values.size > 0:
+            actual_rqe_windows = min(rqe_values.shape[0], num_rqe_windows)
+            rqe_values_array[
+                patient_idx, channel_idx, band_idx, :actual_rqe_windows
+            ] = rqe_values
+            corr_values_array[
+                patient_idx, channel_idx, band_idx, :actual_rqe_windows
+            ] = corr_values
+
+    collection_time = time.time() - collection_start
+    logger.info(
+        f"Result collection completed in {collection_time:.2f} seconds: "
+        f"{successful_tasks} successful tasks, {empty_results} empty results"
+    )
+
+    # Clean up and force garbage collection
+    del tasks, results
+    gc.collect()
+
+    total_elapsed = time.time() - start_time
     logger.info(
         f"Dataset {dataset_name} processing complete in {total_elapsed:.2f} seconds"
     )
@@ -304,12 +309,12 @@ def main():
                 if slurm_mem:
                     # Convert to bytes (SLURM uses MB)
                     mem_mb = int(slurm_mem)
-                    # Use 75% of available memory
-                    memory_limit = f"{int(mem_mb * 0.75)}MB"
-                    logger.info(f"Using 75% of SLURM_MEM_PER_NODE: {memory_limit}")
+                    # Use 90% of available memory since we're on a supercomputer
+                    memory_limit = f"{int(mem_mb * 0.9)}MB"
+                    logger.info(f"Using 90% of SLURM_MEM_PER_NODE: {memory_limit}")
                 else:
                     # Default to a safe value if nothing else is available
-                    memory_limit = "2GB"
+                    memory_limit = "4GB"
                     logger.info(f"Using default memory limit: {memory_limit}")
     else:
         logger.info("Running outside SLURM environment")
@@ -319,13 +324,25 @@ def main():
             else config.get("dask", {}).get("n_workers", 4)
         )
         memory_limit = args.memory_limit or config.get("dask", {}).get(
-            "memory_limit", "2GB"
+            "memory_limit", "4GB"
         )
 
+    # For supercomputer optimization, we use a higher memory limit per worker
+    # but fewer workers to avoid memory issues
     threads_per_worker = config.get("dask", {}).get("threads_per_worker", 1)
-    batch_size = config.get("dask", {}).get("batch_size", 4)
 
-    # Set up LocalCluster for HPC use, avoiding scheduler and worker connections via internet
+    # Calculate optimal worker configuration for supercomputer
+    # On a supercomputer, having fewer workers with more memory is often better
+    # than many workers with less memory each
+    if n_workers > 16:
+        # Adjust worker count to be reasonable for large machines
+        actual_workers = max(8, n_workers // 4)
+        logger.info(
+            f"Optimizing for supercomputer: using {actual_workers} workers instead of {n_workers}"
+        )
+        n_workers = actual_workers
+
+    # Set up LocalCluster for HPC use
     logger.info(f"Setting up LocalCluster with {n_workers} workers")
     cluster = LocalCluster(
         n_workers=n_workers,
@@ -366,14 +383,13 @@ def main():
             data = np.load(file_path)["data"]
             logger.info(f"Loaded {dataset_name} with shape {data.shape}")
 
-            # Process the dataset
-            rqa_metrics, rqe_values, corr_values = process_dataset_in_batches(
+            # Process the dataset with all tasks at once
+            rqa_metrics, rqe_values, corr_values = process_dataset_parallel(
                 data=data,
                 rqa_params=rqa_params,
                 normalize_metrics=normalize_metrics,
                 dataset_name=dataset_name,
                 logger=logger,
-                batch_size=batch_size,
             )
 
             # Save results

@@ -12,13 +12,17 @@
 
 # Load required modules
 module load python/3.10  # Adjust based on available Python versions
+module load miniconda
+source activate pyddeeg
+
 
 # Create a temp directory in localscratch
+# shellcheck disable=SC2153
 MYLOCALSCRATCH=$LOCALSCRATCH/$USER/$SLURM_JOB_ID
 mkdir -p "$MYLOCALSCRATCH"
 
 # Define paths
-PROJ_DIR=$HOME/Python/Projects/Dyslexia_EEG_characterization
+PROJ_DIR=/mnt/home/users/tic_163_uma/mpascual/fscratch/repos/Dyslexia_EEG_characterization
 INPUT_DIR=/mnt/home/users/tic_163_uma/mpascual/fscratch/datasets/EEG
 OUTPUT_DIR=$MYLOCALSCRATCH/results
 CONFIG_DIR=$MYLOCALSCRATCH/config
@@ -32,15 +36,14 @@ cp -r "$PROJ_DIR/src" "$MYLOCALSCRATCH/"
 cp "$PROJ_DIR/config.yaml" "$CONFIG_DIR/"
 
 # Create/modify config file for HPC usage
-cat > "$CONFIG_DIR"/hpc_config.yaml << EOF
+cat > "$CONFIG_DIR"/rqe_config.yaml << EOF
 # Configuration for EEG RQE Processing on HPC
 
 # Dask configuration
 dask:
-  n_workers: 120            # Use slightly less than total CPUs for system overhead
-  threads_per_worker: 1     # Single-threaded workers for better performance
-  memory_limit: "3GB"       # Memory per worker (3GB * 120 workers ≈ 360GB)
-  batch_size: 4             # Process 4 patients at a time
+  n_workers: 32             # Using 32 workers (optimal for task distribution)
+  threads_per_worker: 4     # 4 threads per worker (32*4=128 total cores)
+  memory_limit: "12GB"      # ~12GB per worker (32*12=384GB total)
 
 # Directories
 input_directory: "$INPUT_DIR"
@@ -98,17 +101,19 @@ export PYTHONPATH=$MYLOCALSCRATCH:$PYTHONPATH
 
 # Execute script with timing
 echo "Starting EEG RQE Processing at $(date)"
-time python -m src.pyddeeg.signal_processing.preprocessing.rqe_preprocessing \
+echo "Executing $PROJ_DIR/src/pyddeeg/signal_processing/preprocessing/rqe_preproc_picasso.py"
+time python -m $PROJ_DIR/src/pyddeeg/signal_processing/preprocessing/rqe_preproc_picasso.py \
 --config "$CONFIG_DIR"/hpc_config.yaml \
 --cores "$SLURM_CPUS_PER_TASK"
 
 echo "Processing completed at $(date)"
 
 # Copy results back to home directory
-RESULTS_DIR=$HOME/Python/Projects/Dyslexia_EEG_characterization/results/hpc_run_$(date +%Y%m%d_%H%M%S)
+RESULTS_DIR=/mnt/home/users/tic_163_uma/mpascual/execs/RQE/rqe_run_$(date +%Y%m%d_%H%M%S)
 mkdir -p "$RESULTS_DIR"
 cp -rp "$OUTPUT_DIR"/* "$RESULTS_DIR"/
 cp -rp "$LOG_DIR"/* "$RESULTS_DIR"/
+cp -rp "$CONFIG_DIR"/* "$RESULTS_DIR"/
 
 echo "Results copied to $RESULTS_DIR"
 
