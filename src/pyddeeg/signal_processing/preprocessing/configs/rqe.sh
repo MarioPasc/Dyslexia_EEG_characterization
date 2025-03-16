@@ -32,11 +32,21 @@ python -c "import sys; print(sys.path)"
 echo "Checking for required modules..."
 python -c "import numpy; print('NumPy found, version:', numpy.__version__)"
 python -c "import dask; print('Dask found, version:', dask.__version__)"
-
-# Create a temp directory in localscratch - FIX: Added missing slash
-MYLOCALSCRATCH=$LOCALSCRATCH/$USER/$SLURM_JOB_ID
+echo "Testing module import..."
+python -c "
+try:
+    import sys
+    sys.path.insert(0, '$MYLOCALSCRATCH/src')
+    from pyddeeg.signal_processing.preprocessing.pipelines import rqe_preproc_picasso
+    print('Module imported successfully')
+except Exception as e:
+    print('Error importing module:', str(e))
+"
+# Fix MYLOCALSCRATCH - ensure it doesn't have double slashes
+MYLOCALSCRATCH="${LOCALSCRATCH}${USER}/${SLURM_JOB_ID}"
+# Remove any potential double slashes
+MYLOCALSCRATCH=$(echo "$MYLOCALSCRATCH" | sed 's|//|/|g')
 echo "Creating local scratch directory: $MYLOCALSCRATCH"
-mkdir -p "$MYLOCALSCRATCH"
 
 # Define paths
 PROJ_DIR=/mnt/home/users/tic_163_uma/mpascual/fscratch/repos/Dyslexia_EEG_characterization
@@ -135,16 +145,42 @@ echo "  cat $STATUS_DIR/error.txt"
 echo "Starting EEG RQE Processing at $(date)"
 echo "Executing Python script with config $CONFIG_DIR/rqe_config.yaml"
 
-# Option 1: Use direct path execution
+# Add this before running the Python script
+# Set PYTHONPATH to find modules - be more explicit
+echo "Setting PYTHONPATH..."
+export PYTHONPATH="$MYLOCALSCRATCH/src:$PYTHONPATH"
+echo "PYTHONPATH: $PYTHONPATH"
+
+# Check if Python script exists and show first few lines
+SCRIPT_PATH="$MYLOCALSCRATCH/src/pyddeeg/signal_processing/preprocessing/pipelines/rqe_preproc_picasso.py"
+echo "Checking if script exists at: $SCRIPT_PATH"
+if [ -f "$SCRIPT_PATH" ]; then
+    echo "Script exists. First 10 lines:"
+    head -n 10 "$SCRIPT_PATH"
+else
+    echo "ERROR: Script file not found at $SCRIPT_PATH"
+    # List directory contents to debug
+    echo "Directory contents:"
+    find "$MYLOCALSCRATCH/src/pyddeeg" -type f -name "*.py" | sort
+fi
+
+# Option 1: Use direct path execution with explicit error capture
 echo "Running script using direct path execution..."
-time python "$MYLOCALSCRATCH/src/pyddeeg/signal_processing/preprocessing/pipelines/rqe_preproc_picasso.py" \
+time python "$SCRIPT_PATH" \
 --config "$CONFIG_DIR/rqe_config.yaml" \
 --cores "$SLURM_CPUS_PER_TASK" \
 --status-dir "$STATUS_DIR" \
---progress-interval 30
+--progress-interval 30 2> "$LOG_DIR/python_error.log"
 
-# If Option 1 fails, try Option 2 with module syntax
-if [ $? -ne 0 ]; then
+
+# Check for errors
+exit_status=$?
+if [ $exit_status -ne 0 ]; then
+    echo "Python script failed with error code $exit_status"
+    echo "Error details:"
+    cat "$LOG_DIR/python_error.log"
+fi
+if [ $exit_status -ne 0 ]; then
     echo "Direct path execution failed, trying module syntax..."
     cd "$MYLOCALSCRATCH" || exit 1
     time python -m src.pyddeeg.signal_processing.preprocessing.pipelines.rqe_preproc_picasso \
@@ -152,12 +188,6 @@ if [ $? -ne 0 ]; then
     --cores "$SLURM_CPUS_PER_TASK" \
     --status-dir "$STATUS_DIR" \
     --progress-interval 30
-fi
-
-# Check script exit status
-if [ $? -ne 0 ]; then
-    echo "Python script execution failed!"
-    exit 1
 fi
 
 echo "Processing completed at $(date)"
