@@ -110,7 +110,7 @@ echo ""
 echo "To check last error (if any):"
 echo "  cat $MYLOCALSCRATCH/status/error.txt"
 
-time python $PROJ_DIR/src/pyddeeg/signal_processing/preprocessing/rqe_preproc_picasso.py \
+time python $PROJ_DIR/src/pyddeeg/signal_processing/preprocessing/pipelines/rqe_preproc_picasso.py \
 --config "$CONFIG_DIR"/rqe_config.yaml \
 --cores "$SLURM_CPUS_PER_TASK"
 
