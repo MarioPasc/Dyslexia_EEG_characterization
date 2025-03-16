@@ -96,8 +96,9 @@ cd "$MYLOCALSCRATCH" || exit
 
 # Execute script with timing
 echo "Starting EEG RQE Processing at $(date)"
-echo "Executing $PROJ_DIR/src/pyddeeg/signal_processing/preprocessing/rqe_preproc_picasso.py"
-time python -m $PROJ_DIR/src/pyddeeg/signal_processing/preprocessing/rqe_preproc_picasso.py \
+echo "Executing Python script with config $CONFIG_DIR/rqe_config.yaml"
+
+time python $PROJ_DIR/src/pyddeeg/signal_processing/preprocessing/rqe_preproc_picasso.py \
 --config "$CONFIG_DIR"/hpc_config.yaml \
 --cores "$SLURM_CPUS_PER_TASK"
 
