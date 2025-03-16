@@ -17,7 +17,7 @@ source activate pyddeeg
 
 # Create a temp directory in localscratch
 # shellcheck disable=SC2153
-MYLOCALSCRATCH=$LOCALSCRATCH$USER/$SLURM_JOB_ID
+MYLOCALSCRATCH=/mnt/home/users/tic_163_uma/mpascual/fscratch/tmp/$SLURM_JOB_ID
 mkdir -p "$MYLOCALSCRATCH"
 
 # Define paths
@@ -97,6 +97,18 @@ cd "$MYLOCALSCRATCH" || exit
 # Execute script with timing
 echo "Starting EEG RQE Processing at $(date)"
 echo "Executing Python script with config $CONFIG_DIR/rqe_config.yaml"
+
+echo "To monitor real-time progress, use:"
+echo "  tail -f $LOG_DIR/rqe_processing_*.log"
+echo ""
+echo "To check current status:"
+echo "  cat $MYLOCALSCRATCH/status/status.txt"
+echo ""
+echo "To see only compute progress:"
+echo "  grep compute $MYLOCALSCRATCH/status/status.txt"
+echo ""
+echo "To check last error (if any):"
+echo "  cat $MYLOCALSCRATCH/status/error.txt"
 
 time python $PROJ_DIR/src/pyddeeg/signal_processing/preprocessing/rqe_preproc_picasso.py \
 --config "$CONFIG_DIR"/rqe_config.yaml \
