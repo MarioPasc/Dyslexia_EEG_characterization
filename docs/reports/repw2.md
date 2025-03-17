@@ -53,4 +53,4 @@ As seen, Delta and Gamma bandwidths are the ones that seem to have high distinct
 | 2025-13-03 | Meeting with Ignacio      | 1.0        | Meetings | EEG database was explained |
 | 2025-13-03 | Sliding window analysis      | 2.0        | Code/Research |  |
 | 2025-13-03 | Zerolag EEG Preprocessing parallelization      | 1.0        | Code |  |
-| 2025-13-03 | RQE EEG Preprocessing parallelization      | 6.0        | Research/Code | The window size effect on final data was explored |
+| 2025-13-03 | RQE EEG Preprocessing parallelization      | 16.0        | Research/Code | The window size effect on final data was explored |
