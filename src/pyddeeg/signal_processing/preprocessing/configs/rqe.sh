@@ -1,33 +1,48 @@
 #!/usr/bin/env bash
-#SBATCH -J EEG_RQE_Processing
+#SBATCH -J EEG_RQE_Ch_%j
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=128  # Using AMD node with 128 cores
-#SBATCH --mem=400gb          # Using ~400GB RAM (out of 439GB available)
-#SBATCH --time=72:00:00      # 72 hours should be enough for large datasets
+#SBATCH --cpus-per-task=64   # Using fewer cores for single channel processing
+#SBATCH --mem=128gb          # Less memory needed for single channel processing
+#SBATCH --time=24:00:00      # 24 hours should be enough for one channel
 #SBATCH --constraint=amd     # Selecting AMD nodes for high core count
-#SBATCH --error=eeg_rqe_job.%J.err
-#SBATCH --output=eeg_rqe_job.%J.out
+#SBATCH --error=rqe_ch_%a_%j.err
+#SBATCH --output=rqe_ch_%a_%j.out
+#SBATCH --array=0-30         # Process channels 0-30 (31 channels, excluding Cz)
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=mpascual@uma.es
 
 set -e
 echo "Job started at $(date)"
 
+# Map array index to channel name
+CHANNELS=("Fp1" "Fp2" "F7" "F3" "Fz" "F4" "F8" "FC5" "FC1" "FC2" "FC6" "T7"
+    "C3" "C4" "T8" "TP9" "CP5" "CP1" "CP2" "CP6" "TP10" "P7" "P3" "Pz"
+"P4" "P8" "PO9" "O1" "Oz" "O2" "PO10" "Cz")
+
+# Get channel name for this array job
+if [ "$SLURM_ARRAY_TASK_ID" -lt "${#CHANNELS[@]}" ]; then
+    TARGET_CHANNEL=${CHANNELS[$SLURM_ARRAY_TASK_ID]}
+else
+    echo "Invalid array index: $SLURM_ARRAY_TASK_ID"
+    exit 1
+fi
+
 # Debug information
 echo "========================================="
 echo "SLURM_JOB_ID: $SLURM_JOB_ID"
+echo "SLURM_ARRAY_TASK_ID: $SLURM_ARRAY_TASK_ID"
 echo "SLURM_CPUS_PER_TASK: $SLURM_CPUS_PER_TASK"
 echo "SLURM_MEM_PER_NODE: $SLURM_MEM_PER_NODE"
+echo "Processing channel: $TARGET_CHANNEL (index: $SLURM_ARRAY_TASK_ID)"
 echo "SLURM constraint: amd"
 echo "========================================="
-echo
-echo "========================================="
+
 # Load required modules
 echo "Loading miniconda..."
 module load miniconda
 echo "Activating conda environment..."
 source activate pyddeeg
-echo
+
 # Print Python information for debugging
 which python
 python --version
@@ -36,25 +51,14 @@ python -c "import sys; print(sys.path)"
 echo "Checking for required modules..."
 python -c "import numpy; print('NumPy found, version:', numpy.__version__)"
 python -c "import dask; print('Dask found, version:', dask.__version__)"
-echo "Testing module import..."
-python -c "
-try:
-    import sys
-    sys.path.insert(0, '$MYLOCALSCRATCH/src')
-    from pyddeeg.signal_processing.preprocessing.pipelines import rqe_preproc_picasso
-    print('Module imported successfully')
-except Exception as e:
-    print('Error importing module:', str(e))
-"
+
 echo "========================================="
-echo
-echo "========================================="
-echo "Setting up local scratch directory..."
-# Fix MYLOCALSCRATCH - ensure it doesn't have double slashes
-MYLOCALSCRATCH="${LOCALSCRATCH}${USER}/${SLURM_JOB_ID}"
-# Remove any potential double slashes
-MYLOCALSCRATCH=$(echo "$MYLOCALSCRATCH" | sed 's|//|/|g')
+
+# Create a temp directory in localscratch
+MYLOCALSCRATCH="${LOCALSCRATCH}/${USER}/${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
+MYLOCALSCRATCH=$(echo "$MYLOCALSCRATCH" | sed 's|//|/|g')  # Remove double slashes
 echo "Creating local scratch directory: $MYLOCALSCRATCH"
+mkdir -p "$MYLOCALSCRATCH"
 
 # Define paths
 PROJ_DIR=/mnt/home/users/tic_163_uma/mpascual/fscratch/repos/Dyslexia_EEG_characterization
@@ -73,16 +77,16 @@ echo "Copying project files to scratch..."
 cp -r "$PROJ_DIR/src" "$MYLOCALSCRATCH/"
 cp -r "$PROJ_DIR/pyproject.toml" "$MYLOCALSCRATCH/" # Copy setup files
 
-# Create/modify config file for HPC usage
-echo "Creating configuration file..."
+# Create/modify config file for this channel
+echo "Creating configuration file for channel $TARGET_CHANNEL..."
 cat > "$CONFIG_DIR"/rqe_config.yaml << EOF
-# Configuration for EEG RQE Processing on HPC
+# Configuration for EEG RQE Processing on HPC - Channel: $TARGET_CHANNEL
 
 # Dask configuration
 dask:
-  n_workers: 32             # Using 32 workers (optimal for task distribution)
-  threads_per_worker: 4     # 4 threads per worker (32*4=128 total cores)
-  memory_limit: "12GB"      # ~12GB per worker (32*12=384GB total)
+  n_workers: 16             # Using 16 workers for single channel
+  threads_per_worker: 4     # 4 threads per worker (16*4=64 total cores)
+  memory_limit: "7GB"       # ~7GB per worker (16*7=112GB < 128GB total)
 
 # Directories
 input_directory: "$INPUT_DIR"
@@ -92,6 +96,9 @@ output_directory: "$OUTPUT_DIR"
 logging:
   directory: "$LOG_DIR"
   level: "INFO"
+
+# Channel to process
+target_channel: "$TARGET_CHANNEL"
 
 # Datasets to process
 datasets:
@@ -135,76 +142,54 @@ EOF
 # Go to working directory
 echo "Changing to scratch directory..."
 cd "$MYLOCALSCRATCH" || { echo "Failed to change directory to $MYLOCALSCRATCH"; exit 1; }
-echo "========================================="
-echo
-echo "========================================="
+
+# Set PYTHONPATH to find modules
+echo "Setting PYTHONPATH..."
+export PYTHONPATH="$MYLOCALSCRATCH:$PYTHONPATH"
+echo "PYTHONPATH: $PYTHONPATH"
 
 # Print monitoring instructions
 echo "To monitor real-time progress, use:"
-echo "  tail -f $LOG_DIR/rqe_processing_*.log"
+echo "  tail -f $LOG_DIR/rqe_processing_${TARGET_CHANNEL,,}*.log"
 echo ""
 echo "To check current status:"
 echo "  cat $STATUS_DIR/status.txt"
-echo ""
-echo "To see only compute progress:"
-echo "  grep compute $STATUS_DIR/status.txt"
-echo ""
-echo "To check last error (if any):"
-echo "  cat $STATUS_DIR/error.txt"
 
 # Execute script with timing
-echo "Starting EEG RQE Processing at $(date)"
+echo "Starting EEG RQE Processing for channel $TARGET_CHANNEL at $(date)"
 echo "Executing Python script with config $CONFIG_DIR/rqe_config.yaml"
 
-# Add this before running the Python script
-# Set PYTHONPATH to find modules - be more explicit
-echo "Setting PYTHONPATH..."
-export PYTHONPATH="$MYLOCALSCRATCH/src:$PYTHONPATH"
-echo "PYTHONPATH: $PYTHONPATH"
-
-# Check if Python script exists and show first few lines
 SCRIPT_PATH="$MYLOCALSCRATCH/src/pyddeeg/signal_processing/preprocessing/pipelines/rqe_preproc_picasso.py"
 echo "Checking if script exists at: $SCRIPT_PATH"
 if [ -f "$SCRIPT_PATH" ]; then
-    echo "Script exists. First 10 lines:"
-    head -n 10 "$SCRIPT_PATH"
+    echo "Script exists."
 else
     echo "ERROR: Script file not found at $SCRIPT_PATH"
     # List directory contents to debug
     echo "Directory contents:"
     find "$MYLOCALSCRATCH/src/pyddeeg" -type f -name "*.py" | sort
+    exit 1
 fi
-echo
-# Option 1: Use direct path execution with explicit error capture
+
+# Option 1: Use direct path execution
 echo "Running script using direct path execution..."
 time python "$SCRIPT_PATH" \
 --config "$CONFIG_DIR/rqe_config.yaml" \
 --cores "$SLURM_CPUS_PER_TASK" \
+--channel "$TARGET_CHANNEL" \
 --status-dir "$STATUS_DIR" \
---progress-interval 30 2> "$LOG_DIR/python_error.log"
+--progress-interval 30
 
-
-# Check for errors
-exit_status=$?
-if [ $exit_status -ne 0 ]; then
-    echo "Python script failed with error code $exit_status"
-    echo "Error details:"
-    cat "$LOG_DIR/python_error.log"
-fi
-if [ $exit_status -ne 0 ]; then
-    echo "Direct path execution failed, trying module syntax..."
-    cd "$MYLOCALSCRATCH" || exit 1
-    time python -m src.pyddeeg.signal_processing.preprocessing.pipelines.rqe_preproc_picasso \
-    --config "$CONFIG_DIR/rqe_config.yaml" \
-    --cores "$SLURM_CPUS_PER_TASK" \
-    --status-dir "$STATUS_DIR" \
-    --progress-interval 30
+# Check script exit status
+if [ $? -ne 0 ]; then
+    echo "ERROR: Python script execution failed!"
+    exit 1
 fi
 
 echo "Processing completed at $(date)"
 
 # Copy results back to home directory
-RESULTS_DIR=/mnt/home/users/tic_163_uma/mpascual/execs/RQE/rqe_run_$(date +%Y%m%d_%H%M%S)
+RESULTS_DIR=/mnt/home/users/tic_163_uma/mpascual/execs/RQE/rqe_ch_${TARGET_CHANNEL}_$(date +%Y%m%d_%H%M%S)
 echo "Copying results to $RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
 cp -rp "$OUTPUT_DIR"/* "$RESULTS_DIR"/ || echo "Warning: No output files to copy"

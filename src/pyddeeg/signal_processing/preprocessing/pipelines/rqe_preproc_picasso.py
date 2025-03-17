@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-eeg_rqe_processor.py - HPC Version
+eeg_rqe_channel_processor.py - HPC Version
 
-Process multiple EEG datasets with Recurrence Quantification Analysis (RQA) and
-Recurrence Quantification Entropy (RQE) metrics using Dask for parallelization.
+Process EEG datasets with Recurrence Quantification Analysis (RQA) and
+Recurrence Quantification Entropy (RQE) metrics for specific channels using Dask.
 
+This version allows processing either a single channel or all channels (except Cz).
 Optimized for execution on high-memory HPC clusters with no internet connectivity.
-This version processes all tasks at once instead of batching by patients.
 """
 
 import os
@@ -14,7 +14,7 @@ import time
 from datetime import datetime
 import yaml
 
-from typing import Dict, Tuple, Optional, Any
+from typing import Dict, Tuple, List, Optional, Any
 
 import numpy as np
 import logging
@@ -30,323 +30,45 @@ from dask import delayed
 
 import threading
 
-#### Self-contained script, includes the functions from rqe_parallelizable ####
+from pyddeeg.signal_processing.rqa_toolbox.rqe_parallelizable import (
+    process_single_channel_band,
+)
 
-import numpy as np
-from typing import List, Tuple, Dict, Optional, Union
-import scipy.stats as stats
-from pyunicorn.timeseries import RecurrencePlot
-
-
-def compute_rqa_metrics_for_window(
-    window_signal: np.ndarray,
-    embedding_dim: int,
-    time_delay: int,
-    radius: float,
-    distance_metric: str,
-    min_diagonal_line: int = 2,
-    min_vertical_line: int = 2,
-    min_white_vertical_line: int = 1,
-    metrics_to_use: Optional[List[str]] = None,
-    cache_recurrence_plot: bool = False,
-) -> Tuple[Dict[str, float], Optional[RecurrencePlot]]:
-    """
-    Compute requested RQA metrics from a window of EEG signal.
-
-    Parameters:
-    -----------
-    window_signal : np.ndarray
-        Signal window to analyze
-    embedding_dim, time_delay, radius, etc. : Various parameters
-        RQA computation parameters
-    cache_recurrence_plot : bool
-        If True, return the RecurrencePlot object for potential reuse
-
-    Returns:
-    --------
-    metrics : Dict[str, float]
-        Dictionary of computed metrics
-    rp : Optional[RecurrencePlot]
-        RecurrencePlot object if cache_recurrence_plot is True, otherwise None
-    """
-    if metrics_to_use is None:
-        metrics_to_use = ["RR", "DET", "L_max", "L_mean", "ENT", "LAM", "TT"]
-
-    if distance_metric.lower() == "meandist":
-        from scipy.spatial.distance import pdist
-
-        distances = pdist(window_signal.reshape(-1, 1), metric="euclidean")
-        mean_dist = np.mean(distances) if len(distances) > 0 else 1.0
-        normalized_radius = radius / mean_dist
-        actual_radius = normalized_radius
-        distance_metric = "euclidean"
-    else:
-        actual_radius = radius
-
-    rp = RecurrencePlot(
-        time_series=window_signal,
-        dim=embedding_dim,
-        tau=time_delay,
-        metric=distance_metric,
-        threshold=actual_radius,
-        silence_level=2,
-    )
-
-    # Define metric computation functions
-    metric_functions = {
-        "RR": lambda: rp.recurrence_rate(),
-        "DET": lambda: rp.determinism(l_min=min_diagonal_line),
-        "L_max": lambda: rp.max_diaglength(),
-        "L_mean": lambda: rp.average_diaglength(l_min=min_diagonal_line),
-        "ENT": lambda: rp.diag_entropy(l_min=min_diagonal_line),
-        "LAM": lambda: rp.laminarity(v_min=min_vertical_line),
-        "TT": lambda: rp.trapping_time(v_min=min_vertical_line),
-        "V_max": lambda: rp.max_vertlength(),
-        "V_mean": lambda: rp.average_vertlength(v_min=min_vertical_line),
-        "V_ENT": lambda: rp.vert_entropy(v_min=min_vertical_line),
-        "W_max": lambda: rp.max_white_vertlength(),
-        "W_mean": lambda: rp.average_white_vertlength(w_min=min_white_vertical_line),
-        "W_ENT": lambda: rp.white_vert_entropy(w_min=min_white_vertical_line),
-        "CLEAR": lambda: (
-            rp.complexity_entropy() if hasattr(rp, "complexity_entropy") else None
-        ),
-        "PERM_ENT": lambda: (
-            rp.permutation_entropy() if hasattr(rp, "permutation_entropy") else None
-        ),
-    }
-
-    # Compute requested metrics
-    metrics = {}
-    for metric in metrics_to_use:
-        if metric in metric_functions:
-            try:
-                metrics[metric] = metric_functions[metric]()
-            except Exception:
-                metrics[metric] = None
-        else:
-            metrics[metric] = None
-
-    if cache_recurrence_plot:
-        return metrics, rp
-    else:
-        return metrics, None
-
-
-def compute_rqa_batch(
-    signal: np.ndarray,
-    raw_signal_window_size: int,
-    embedding_dim: int,
-    time_delay: int,
-    radius: float,
-    distance_metric: str,
-    min_diagonal_line: int,
-    min_vertical_line: int,
-    min_white_vertical_line: int,
-    metrics_to_use: List[str],
-    stride: int = 1,
-    batch_size: Optional[int] = None,
-) -> np.ndarray:
-    """
-    Compute RQA metrics for a batch of sliding windows.
-    Optimized version for Dask parallel processing.
-
-    Parameters:
-    -----------
-    signal : np.ndarray
-        1D array containing the signal to analyze
-    raw_signal_window_size, embedding_dim, etc. : Various parameters
-        RQA computation parameters
-    stride : int
-        Step size between consecutive windows
-    batch_size : Optional[int]
-        Number of windows to process in one batch (None = all)
-
-    Returns:
-    --------
-    rqa_matrix : np.ndarray
-        2D array with shape (num_windows, len(metrics_to_use))
-    """
-    n = len(signal)
-    num_windows = (n - raw_signal_window_size) // stride + 1
-
-    if batch_size is None or batch_size >= num_windows:
-        batch_size = num_windows
-
-    # Pre-allocate results array
-    rqa_results = np.full((batch_size, len(metrics_to_use)), np.nan)
-
-    for i in range(batch_size):
-        start_idx = i * stride
-        window_data = signal[start_idx : start_idx + raw_signal_window_size]
-
-        metrics, _ = compute_rqa_metrics_for_window(
-            window_signal=window_data,
-            embedding_dim=embedding_dim,
-            time_delay=time_delay,
-            radius=radius,
-            distance_metric=distance_metric,
-            min_diagonal_line=min_diagonal_line,
-            min_vertical_line=min_vertical_line,
-            min_white_vertical_line=min_white_vertical_line,
-            metrics_to_use=metrics_to_use,
-        )
-
-        # Extract metrics in the same order as metrics_to_use
-        for j, key in enumerate(metrics_to_use):
-            rqa_results[i, j] = metrics.get(key, np.nan)
-
-    return rqa_results
-
-
-def compute_rqe_batch(
-    rqa_matrix: np.ndarray, rqa_space_window_size: int
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Compute RQE and correlation for a batch of RQA metrics.
-    Optimized version for Dask parallel processing.
-
-    Parameters:
-    -----------
-    rqa_matrix : np.ndarray
-        2D array of shape (num_windows, num_metrics)
-    rqa_space_window_size : int
-        Size of window for computing RQE correlation in the RQA space
-
-    Returns:
-    --------
-    rqe_values : np.ndarray
-        Array of RQE values
-    corr_values : np.ndarray
-        Array of correlation values
-    """
-    T, L = rqa_matrix.shape
-    Q = max(1, T - rqa_space_window_size + 1)
-
-    rqe_list = np.zeros(Q)
-    corr_list = np.zeros(Q)
-
-    for start_idx in range(Q):
-        sub_block = rqa_matrix[start_idx : start_idx + rqa_space_window_size, :]
-        # Transpose to get each metric as a row
-        sub_block_T = sub_block.T
-
-        # Collect pairwise correlations
-        pairwise_rho = []
-        for l1 in range(L):
-            for l2 in range(l1 + 1, L):
-                # Skip if either series has NaN values
-                if (
-                    np.isnan(sub_block_T[l1, :]).any()
-                    or np.isnan(sub_block_T[l2, :]).any()
-                ):
-                    continue
-
-                try:
-                    rho, _ = stats.spearmanr(sub_block_T[l1, :], sub_block_T[l2, :])
-                    if not np.isnan(rho):
-                        pairwise_rho.append(abs(rho))
-                except Exception:
-                    # Handle potential errors in correlation computation
-                    pass
-
-        if len(pairwise_rho) == 0:
-            rqe_list[start_idx] = 1.0
-            corr_list[start_idx] = 0.0
-        else:
-            # RQE = product(1 + |rho|)
-            product_val = 1.0
-            for c in pairwise_rho:
-                product_val *= 1.0 + c
-            rqe_list[start_idx] = product_val
-
-            # Corr = mean(|rho|)
-            corr_list[start_idx] = np.mean(pairwise_rho)
-
-    return rqe_list, corr_list
-
-
-def process_single_channel_band(
-    signal: np.ndarray, rqa_params: Dict, normalize_metrics: bool = False
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Process a single channel/band combination.
-    This function is designed to be the unit of parallelization.
-
-    Parameters:
-    -----------
-    signal : np.ndarray
-        1D array representing a single channel/band
-    rqa_params : Dict
-        Dictionary of RQA parameters
-    normalize_metrics : bool
-        Whether to normalize metrics before RQE computation
-
-    Returns:
-    --------
-    rqa_matrix : np.ndarray
-        Matrix of RQA metrics for each time window
-    rqe_values : np.ndarray
-        Array of RQE values
-    corr_values : np.ndarray
-        Array of correlation values
-    """
-    # Extract parameters
-    embedding_dim = rqa_params.get("embedding_dim", 10)
-    radius = rqa_params.get("radius", 0.8)
-    time_delay = rqa_params.get("time_delay", 1)
-    raw_signal_window_size = rqa_params.get("raw_signal_window_size", 100)
-    rqa_space_window_size = rqa_params.get("rqa_space_window_size", 25)
-    min_diagonal_line = rqa_params.get("min_diagonal_line", 5)
-    min_vertical_line = rqa_params.get("min_vertical_line", 1)
-    min_white_vertical_line = rqa_params.get("min_white_vertical_line", 1)
-    metrics_to_use = rqa_params.get("metrics_to_use", ["RR", "DET", "ENT", "TT"])
-    stride = rqa_params.get("stride", 1)
-
-    # Compute RQA metrics
-    rqa_matrix = compute_rqa_batch(
-        signal=signal,
-        raw_signal_window_size=raw_signal_window_size,
-        embedding_dim=embedding_dim,
-        time_delay=time_delay,
-        radius=radius,
-        distance_metric="euclidean",
-        min_diagonal_line=min_diagonal_line,
-        min_vertical_line=min_vertical_line,
-        min_white_vertical_line=min_white_vertical_line,
-        metrics_to_use=metrics_to_use,
-        stride=stride,
-    )
-
-    # Normalize metrics if requested
-    if normalize_metrics:
-        for j in range(rqa_matrix.shape[1]):
-            col = rqa_matrix[:, j]
-            if np.all(np.isnan(col)):
-                continue
-
-            valid_values = col[~np.isnan(col)]
-            if len(valid_values) > 0:
-                col_min = np.min(valid_values)
-                col_max = np.max(valid_values)
-
-                if col_max > col_min:
-                    col[~np.isnan(col)] = (col[~np.isnan(col)] - col_min) / (
-                        col_max - col_min
-                    )
-                    rqa_matrix[:, j] = col
-
-    # Check if we have enough windows for RQE computation
-    if rqa_matrix.shape[0] <= rqa_space_window_size:
-        # Return empty arrays if not enough windows
-        return rqa_matrix, np.array([]), np.array([])
-
-    # Compute RQE and correlation
-    rqe_values, corr_values = compute_rqe_batch(
-        rqa_matrix, rqa_space_window_size=rqa_space_window_size
-    )
-
-    return rqa_matrix, rqe_values, corr_values
-
+# Define EEG channel names
+EEG_CHANNELS = [
+    "Fp1",
+    "Fp2",
+    "F7",
+    "F3",
+    "Fz",
+    "F4",
+    "F8",
+    "FC5",
+    "FC1",
+    "FC2",
+    "FC6",
+    "T7",
+    "C3",
+    "C4",
+    "T8",
+    "TP9",
+    "CP5",
+    "CP1",
+    "CP2",
+    "CP6",
+    "TP10",
+    "P7",
+    "P3",
+    "Pz",
+    "P4",
+    "P8",
+    "PO9",
+    "O1",
+    "Oz",
+    "O2",
+    "PO10",
+    "Cz",
+]
 
 #### Context Managers ####
 
@@ -486,14 +208,21 @@ def update_status_file(status_dir, stage, message):
         f.write(f"[{timestamp}] {message}\n")
 
 
-def setup_logging(log_dir: str = "./logs") -> logging.Logger:
+def setup_logging(log_dir: str = "./logs", suffix: str = "") -> logging.Logger:
     """Set up logging with file and console handlers."""
     log_path = Path(log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
 
-    log_file = (
-        log_path / f"rqe_processing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-    )
+    # Add suffix to log filename if provided
+    if suffix:
+        log_file = (
+            log_path
+            / f"rqe_processing_{suffix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        )
+    else:
+        log_file = (
+            log_path / f"rqe_processing_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        )
 
     logger = logging.getLogger("EEG_RQE_Processor")
     logger.setLevel(logging.INFO)
@@ -549,32 +278,99 @@ def process_channel_band_with_gc(
     return result
 
 
-def process_dataset_parallel(
+def get_channel_indices(target_channel: str) -> List[int]:
+    """
+    Get list of channel indices to process based on target_channel.
+
+    Parameters:
+    -----------
+    target_channel : str
+        Channel name or "All" to process all channels except Cz
+
+    Returns:
+    --------
+    List[int]
+        List of channel indices to process
+    """
+    if target_channel.lower() == "all":
+        # Return all channels except Cz (which is the last channel, index 31)
+        return list(range(len(EEG_CHANNELS) - 1))  # All except the last one (Cz)
+    else:
+        # Find the index of the specified channel
+        try:
+            channel_idx = EEG_CHANNELS.index(target_channel)
+            return [channel_idx]
+        except ValueError:
+            raise ValueError(
+                f"Channel '{target_channel}' not found. Available channels: {', '.join(EEG_CHANNELS)}"
+            )
+
+
+def process_dataset_channels(
     data: np.ndarray,
     rqa_params: Dict[str, Any],
+    target_channel: str,
     normalize_metrics: bool = False,
     dataset_name: str = "unknown",
     logger: Optional[logging.Logger] = None,
     status_dir: Optional[str] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
     """
-    Process an entire EEG dataset with RQA/RQE analysis using Dask for HPC.
+    Process specific channel(s) of an EEG dataset with RQA/RQE analysis using Dask.
 
-    This version processes all tasks at once, optimized for high-memory supercomputers.
+    Parameters:
+    -----------
+    data : np.ndarray
+        EEG data with shape (n_patients, n_channels, n_samples, n_bands)
+    rqa_params : Dict[str, Any]
+        Parameters for RQA computation
+    target_channel : str
+        Channel name or "All" to process all channels except Cz
+    normalize_metrics : bool
+        Whether to normalize metrics
+    dataset_name : str
+        Name of the dataset for logging
+    logger : Optional[logging.Logger]
+        Logger instance
+    status_dir : Optional[str]
+        Directory for status files
+
+    Returns:
+    --------
+    Tuple[np.ndarray, np.ndarray, np.ndarray]
+        RQA metrics, RQE values, and correlation values
     """
     if logger is None:
         logger = logging.getLogger("EEG_RQE_Processor")
 
     n_patients, n_channels, n_samples, n_bands = data.shape
-    logger.info(f"Processing dataset {dataset_name}: {data.shape}")
-    logger.info(f"Processing all tasks in parallel (no batching)")
 
-    if status_dir:
-        update_status_file(
-            status_dir,
-            "process_details",
-            f"Processing {dataset_name} with shape {data.shape}",
-        )
+    # Get the channel indices to process
+    try:
+        channel_indices = get_channel_indices(target_channel)
+        channel_names = [EEG_CHANNELS[idx] for idx in channel_indices]
+
+        if target_channel.lower() == "all":
+            channel_description = (
+                f"all channels except Cz ({len(channel_indices)} channels)"
+            )
+        else:
+            channel_description = (
+                f"channel {target_channel} (index {channel_indices[0]})"
+            )
+
+        logger.info(f"Processing dataset {dataset_name}: {data.shape}")
+        logger.info(f"Processing {channel_description}")
+
+        if status_dir:
+            update_status_file(
+                status_dir,
+                "process_details",
+                f"Processing {dataset_name} with shape {data.shape} - {channel_description}",
+            )
+    except ValueError as e:
+        logger.error(f"Channel selection error: {str(e)}")
+        raise
 
     # Extract parameters for output shape calculation
     stride = rqa_params.get("stride", 1)
@@ -591,45 +387,47 @@ def process_dataset_parallel(
         f"Calculated dimensions: num_windows={num_windows}, num_rqe_windows={num_rqe_windows}, num_metrics={num_metrics}"
     )
 
-    # Initialize output arrays
+    # Initialize output arrays - only for selected channels
+    n_selected_channels = len(channel_indices)
     rqa_metrics_array = np.full(
-        (n_patients, n_channels, n_bands, num_windows, num_metrics), np.nan
+        (n_patients, n_selected_channels, n_bands, num_windows, num_metrics), np.nan
     )
     rqe_values_array = np.full(
-        (n_patients, n_channels, n_bands, num_rqe_windows), np.nan
+        (n_patients, n_selected_channels, n_bands, num_rqe_windows), np.nan
     )
     corr_values_array = np.full(
-        (n_patients, n_channels, n_bands, num_rqe_windows), np.nan
+        (n_patients, n_selected_channels, n_bands, num_rqe_windows), np.nan
     )
 
-    # Create Dask task graph for all tasks
+    # Create Dask task graph for selected channels
     tasks = {}
     task_indices = []
 
     # Create a progress counter
-    total_tasks = n_patients * n_channels * n_bands
+    total_tasks = n_patients * n_selected_channels * n_bands
     logger.info(f"Creating {total_tasks} tasks for parallel processing")
 
     if status_dir:
         update_status_file(
             status_dir,
             "process_details",
-            f"Creating {total_tasks} tasks for {dataset_name}",
+            f"Creating {total_tasks} tasks for {dataset_name} - {channel_description}",
         )
 
     start_time = time.time()
     task_creation_start = time.time()
 
-    # Create all tasks at once
+    # Create tasks only for selected channels
     for patient_idx in range(n_patients):
-        for channel_idx in range(n_channels):
+        for local_ch_idx, global_ch_idx in enumerate(channel_indices):
             for band_idx in range(n_bands):
                 # Create a unique key for this task
-                task_key = (patient_idx, channel_idx, band_idx)
+                task_key = (patient_idx, local_ch_idx, band_idx)
                 task_indices.append(task_key)
 
                 # Extract signal for this patient, channel, band combination
-                signal = data[patient_idx, channel_idx, :, band_idx].copy()
+                # Use the global channel index to access data but the local index for output arrays
+                signal = data[patient_idx, global_ch_idx, :, band_idx].copy()
 
                 # Create a delayed task with memory management
                 tasks[task_key] = process_channel_band_with_gc(
@@ -651,7 +449,7 @@ def process_dataset_parallel(
 
     # Compute all tasks at once
     compute_start = time.time()
-    logger.info(f"Starting Dask computation of all tasks")
+    logger.info(f"Starting Dask computation of all tasks for {channel_description}")
 
     if status_dir:
         update_status_file(
@@ -681,27 +479,27 @@ def process_dataset_parallel(
     empty_results = 0
 
     for task_key in task_indices:
-        patient_idx, channel_idx, band_idx = task_key
+        patient_idx, local_ch_idx, band_idx = task_key
         rqa_matrix, rqe_values, corr_values = results[task_key]
 
-        # Store RQA metrics
+        # Store RQA metrics - using local channel index
         if rqa_matrix.size > 0:
             actual_windows = min(rqa_matrix.shape[0], num_windows)
             rqa_metrics_array[
-                patient_idx, channel_idx, band_idx, :actual_windows, :
+                patient_idx, local_ch_idx, band_idx, :actual_windows, :
             ] = rqa_matrix
             successful_tasks += 1
         else:
             empty_results += 1
 
-        # Store RQE values
+        # Store RQE values - using local channel index
         if rqe_values.size > 0:
             actual_rqe_windows = min(rqe_values.shape[0], num_rqe_windows)
             rqe_values_array[
-                patient_idx, channel_idx, band_idx, :actual_rqe_windows
+                patient_idx, local_ch_idx, band_idx, :actual_rqe_windows
             ] = rqe_values
             corr_values_array[
-                patient_idx, channel_idx, band_idx, :actual_rqe_windows
+                patient_idx, local_ch_idx, band_idx, :actual_rqe_windows
             ] = corr_values
 
     collection_time = time.time() - collection_start
@@ -709,6 +507,13 @@ def process_dataset_parallel(
         f"Result collection completed in {collection_time:.2f} seconds: "
         f"{successful_tasks} successful tasks, {empty_results} empty results"
     )
+
+    # Store channel information in metadata
+    channel_metadata = {
+        "channel_indices": channel_indices,
+        "channel_names": channel_names,
+        "target_channel": target_channel,
+    }
 
     # Clean up and force garbage collection
     del tasks, results
@@ -719,7 +524,7 @@ def process_dataset_parallel(
         f"Dataset {dataset_name} processing complete in {total_elapsed:.2f} seconds"
     )
 
-    return rqa_metrics_array, rqe_values_array, corr_values_array
+    return rqa_metrics_array, rqe_values_array, corr_values_array, channel_metadata
 
 
 #### Helper functions ####
@@ -736,9 +541,9 @@ def load_config(config_file: str) -> Dict[str, Any]:
 
 
 def main():
-    """Main function to process all EEG datasets."""
+    """Main function to process EEG datasets for specific channel(s)."""
     parser = argparse.ArgumentParser(
-        description="Process EEG datasets with RQA/RQE analysis using Dask."
+        description="Process EEG datasets with RQA/RQE analysis for specific channels using Dask."
     )
     parser.add_argument(
         "--config",
@@ -770,20 +575,34 @@ def main():
         default=60,
         help="Interval in seconds between progress updates",
     )
+    parser.add_argument(
+        "--channel",
+        type=str,
+        default=None,
+        help="Specific channel to process (overrides config file setting)",
+    )
     args = parser.parse_args()
 
     # Load configuration from YAML
     config = load_config(args.config)
 
-    # Set up logging
+    # Get target channel - command line overrides config file
+    target_channel = (
+        args.channel if args.channel else config.get("target_channel", "All")
+    )
+
+    # Set up logging with channel information in the filename
     log_dir = config.get("logging", {}).get("directory", "./logs")
-    logger = setup_logging(log_dir)
+    logger = setup_logging(log_dir, suffix=target_channel.lower())
     logger.info(f"Configuration loaded from {args.config}")
+    logger.info(f"Target channel: {target_channel}")
 
     # Create status directory
     status_dir = args.status_dir
     os.makedirs(status_dir, exist_ok=True)
-    update_status_file(status_dir, "init", "Starting RQE processing")
+    update_status_file(
+        status_dir, "init", f"Starting RQE processing for channel: {target_channel}"
+    )
 
     # Create output directory if it doesn't exist
     output_dir = Path(config.get("output_directory", "./results"))
@@ -851,16 +670,24 @@ def main():
     # but fewer workers to avoid memory issues
     threads_per_worker = config.get("dask", {}).get("threads_per_worker", 1)
 
-    # Calculate optimal worker configuration for supercomputer
-    # On a supercomputer, having fewer workers with more memory is often better
-    # than many workers with less memory each
-    if n_workers > 16:
-        # Adjust worker count to be reasonable for large machines
-        actual_workers = max(8, n_workers // 4)
-        logger.info(
-            f"Optimizing for supercomputer: using {actual_workers} workers instead of {n_workers}"
-        )
-        n_workers = actual_workers
+    # When processing a single channel, we can use more workers with less memory
+    if target_channel.lower() != "all":
+        # For single channel, we can use more workers
+        if n_workers > 32:
+            # Still limit for stability
+            actual_workers = min(n_workers, 64)
+            logger.info(
+                f"Single channel mode: using {actual_workers} workers for better parallelism"
+            )
+            n_workers = actual_workers
+    else:
+        # For all channels, use the original optimization
+        if n_workers > 16:
+            actual_workers = max(8, n_workers // 4)
+            logger.info(
+                f"All-channel mode: using {actual_workers} workers instead of {n_workers}"
+            )
+            n_workers = actual_workers
 
     # Set up LocalCluster for HPC use
     logger.info(f"Setting up LocalCluster with {n_workers} workers")
@@ -927,27 +754,41 @@ def main():
                     # Log memory after loading
                     log_memory_usage(logger)
 
-                    # Process the dataset with all tasks at once
+                    # Process the dataset with selected channel(s)
                     update_status_file(
-                        status_dir, "process", f"Processing {dataset_name}"
+                        status_dir,
+                        "process",
+                        f"Processing {dataset_name} - {target_channel}",
                     )
-                    rqa_metrics, rqe_values, corr_values = process_dataset_parallel(
-                        data=data,
-                        rqa_params=rqa_params,
-                        normalize_metrics=normalize_metrics,
-                        dataset_name=dataset_name,
-                        logger=logger,
-                        status_dir=status_dir,
+                    rqa_metrics, rqe_values, corr_values, channel_metadata = (
+                        process_dataset_channels(
+                            data=data,
+                            rqa_params=rqa_params,
+                            target_channel=target_channel,
+                            normalize_metrics=normalize_metrics,
+                            dataset_name=dataset_name,
+                            logger=logger,
+                            status_dir=status_dir,
+                        )
                     )
 
                     # Log memory after processing
                     log_memory_usage(logger)
 
-                    # Save results
+                    # Save results - include channel information in filename
+                    if target_channel.lower() == "all":
+                        output_filename = f"{dataset_name}_all_channels_rqe_results.npz"
+                    else:
+                        output_filename = (
+                            f"{dataset_name}_{target_channel}_rqe_results.npz"
+                        )
+
                     update_status_file(
-                        status_dir, "save", f"Saving results for {dataset_name}"
+                        status_dir,
+                        "save",
+                        f"Saving results for {dataset_name} - {target_channel}",
                     )
-                    output_file = output_dir / f"{dataset_name}_rqe_results.npz"
+                    output_file = output_dir / output_filename
                     logger.info(f"Saving results to {output_file}")
                     np.savez_compressed(
                         output_file,
@@ -956,14 +797,17 @@ def main():
                         corr_values=corr_values,
                         rqa_params=rqa_params,
                         normalize_metrics=normalize_metrics,
+                        channel_metadata=channel_metadata,
                     )
                     logger.info(f"Results saved successfully")
                     update_status_file(
-                        status_dir, "save", f"Results saved for {dataset_name}"
+                        status_dir,
+                        "save",
+                        f"Results saved for {dataset_name} - {target_channel}",
                     )
 
                     # Clean up to free memory
-                    del data, rqa_metrics, rqe_values, corr_values
+                    del data, rqa_metrics, rqe_values, corr_values, channel_metadata
                     gc.collect()
                     log_memory_usage(logger)  # Log memory after cleanup
 
@@ -982,7 +826,9 @@ def main():
         client.close()
         cluster.close()
         logger.info("Dask client and cluster closed.")
-        update_status_file(status_dir, "complete", "Processing complete")
+        update_status_file(
+            status_dir, "complete", f"Processing complete for {target_channel}"
+        )
 
     except Exception as e:
         logger.error(f"Error in main process: {str(e)}", exc_info=True)
