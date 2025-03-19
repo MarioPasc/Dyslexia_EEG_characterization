@@ -1,4 +1,4 @@
-# Report week 1
+# Report week 2-3
 
 ## Progress Report
 
@@ -34,17 +34,19 @@ Finally, a small exploration of the RQA matrix and metrics on other bandwidths f
 
 ![figure](../assets/rqe/ct_t7_rqa.svg)
 
-As seen, Delta and Gamma bandwidths are the ones that seem to have high distinct recurrence amongst all bandwidths. 
+As seen, Delta and Gamma bandwidths are the ones that seem to have high distinct recurrence amongst all bandwidths.
+
+## Correlation exploration
+
+
 
 ## Objectives for this week
 
-- [ ] EEG data
-  - [X] Parallelize the preprocessing code (**Dask!!**)
-  - [ ] Make a script to extract the data that we want to treat with (frequency, electrode, bandwidth decomposition)
-
--  [ ] RQE
-  - [ ] Apply RQE metric to input data and visualize before and after on a set of patients.
+- [X] RQE
+  - [X] Apply RQE metric to input data and visualize before and after on a set of patients.
   - [X] Analyze the inpact of different window sizes for RQE algorithm
+  - [X] Parallelize the RQA metrics and RQE metrics computing on Picasso
+  - [X] Analyze correlations between RQA variables in order to clean up for RQE computation
 
 ## Weekly Project Time Tracking
 
@@ -53,4 +55,5 @@ As seen, Delta and Gamma bandwidths are the ones that seem to have high distinct
 | 2025-13-03 | Meeting with Ignacio      | 1.0        | Meetings | EEG database was explained |
 | 2025-13-03 | Sliding window analysis      | 2.0        | Code/Research |  |
 | 2025-13-03 | Zerolag EEG Preprocessing parallelization      | 1.0        | Code |  |
-| 2025-13-03 | RQE EEG Preprocessing parallelization      | 16.0        | Research/Code | The window size effect on final data was explored |
+| 2025-17-03 | RQE EEG Preprocessing parallelization      | 16.0        | Research/Code | The window size effect on final data was explored |
+| 2025-19-03 | Correlation analysis      | 8.0        | Research/Code |  |
