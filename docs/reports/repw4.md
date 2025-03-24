@@ -4,7 +4,8 @@
 
 ## Objectives for this week
 
-- [ ] 
+- [ ] Execute full RQA metric computation for all channels and patients
+- [ ] Build a RQA metric selection based off correlation analysis 
 
 ## Weekly Project Time Tracking
 

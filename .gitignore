@@ -171,7 +171,7 @@ cython_debug/
 .pypirc
 
 # Jupyter and other files
-*.ipynb
+# *.ipynb
 *.log
 *.csv
 *.npz
