@@ -232,7 +232,11 @@ def compute_rqe_batch(
 
 
 def process_single_channel_band(
-    signal: np.ndarray, rqa_params: Dict, normalize_metrics: bool = False
+    signal: np.ndarray,
+    rqa_params: Dict,
+    normalize_metrics: bool = False,
+    return_rqe: bool = False,
+    rqa_space_window_size: int = 25,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Process a single channel/band combination.
@@ -245,23 +249,27 @@ def process_single_channel_band(
     rqa_params : Dict
         Dictionary of RQA parameters
     normalize_metrics : bool
-        Whether to normalize metrics before RQE computation
+        Whether to normalize metrics
+    return_rqe : bool
+        Whether to compute RQE and correlation
+    rqa_space_window_size : int
+        Size of window for computing RQE correlation in the RQA space.
+        Only used if return_rqe is True.
 
     Returns:
     --------
     rqa_matrix : np.ndarray
         Matrix of RQA metrics for each time window
     rqe_values : np.ndarray
-        Array of RQE values
+        RQE values if return_rqe is True, empty array otherwise
     corr_values : np.ndarray
-        Array of correlation values
+        Correlation values if return_rqe is True, empty array otherwise
     """
     # Extract parameters
     embedding_dim = rqa_params.get("embedding_dim", 10)
     radius = rqa_params.get("radius", 0.8)
     time_delay = rqa_params.get("time_delay", 1)
     raw_signal_window_size = rqa_params.get("raw_signal_window_size", 100)
-    rqa_space_window_size = rqa_params.get("rqa_space_window_size", 25)
     min_diagonal_line = rqa_params.get("min_diagonal_line", 5)
     min_vertical_line = rqa_params.get("min_vertical_line", 1)
     min_white_vertical_line = rqa_params.get("min_white_vertical_line", 1)
@@ -301,14 +309,18 @@ def process_single_channel_band(
                     )
                     rqa_matrix[:, j] = col
 
-    # Check if we have enough windows for RQE computation
-    if rqa_matrix.shape[0] <= rqa_space_window_size:
-        # Return empty arrays if not enough windows
+    # Only compute RQE if requested
+    if return_rqe:
+        # Check if we have enough windows for RQE computation
+        if rqa_matrix.shape[0] <= rqa_space_window_size:
+            # Return empty arrays if not enough windows
+            return rqa_matrix, np.array([]), np.array([])
+
+        # Compute RQE and correlation
+        rqe_values, corr_values = compute_rqe_batch(
+            rqa_matrix, rqa_space_window_size=rqa_space_window_size
+        )
+        return rqa_matrix, rqe_values, corr_values
+    else:
+        # Skip RQE computation, return empty arrays
         return rqa_matrix, np.array([]), np.array([])
-
-    # Compute RQE and correlation
-    rqe_values, corr_values = compute_rqe_batch(
-        rqa_matrix, rqa_space_window_size=rqa_space_window_size
-    )
-
-    return rqa_matrix, rqe_values, corr_values

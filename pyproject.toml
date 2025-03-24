@@ -10,18 +10,19 @@ classifiers = [
   "Operating System :: OS Independent",
 ]
 dependencies = [
-  "numpy",
+  "numpy<2.0.0",
   "scipy",
   "matplotlib",
   "scienceplots",
   "pyunicorn",
-  "pandas",
+  "pandas>=1.0.0,<2.0.0",
   "Scikit-Learn",
   "dask",
   "PyYAML",
   "distributed",
   "psutil",
   "statsmodels",
+  "ppscore",
 ]
 description = "A Python library that contains all the functions used to perform experiments on EEG data for the analysis and characterization of Developmental Dyslexia (DD)."
 keywords = ["eeg", "machine learning", "recurrence analysis"]

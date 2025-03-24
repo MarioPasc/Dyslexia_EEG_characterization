@@ -178,6 +178,80 @@ def log_task_progress(client, logger, update_interval=60):
         progress_thread.join(timeout=5.0)  # Wait for the thread to terminate
 
 
+def write_metadata_file(
+    output_dir: Path,
+    dataset_name: str,
+    target_channel: str,
+    rqa_params: Dict[str, Any],
+    normalize_metrics: bool,
+    channel_metadata: Dict[str, Any],
+) -> Path:
+    """
+    Write metadata to a text file including channel and metrics information.
+
+    Parameters:
+    -----------
+    output_dir : Path
+        Directory to save the metadata file
+    dataset_name : str
+        Name of the dataset
+    target_channel : str
+        Target channel or "All"
+    rqa_params : Dict[str, Any]
+        RQA parameters dictionary
+    normalize_metrics : bool
+        Whether metrics were normalized
+    channel_metadata : Dict[str, Any]
+        Channel metadata information
+
+    Returns:
+    --------
+    Path
+        Path to the created metadata file
+    """
+    if target_channel.lower() == "all":
+        metadata_filename = f"{dataset_name}_all_channels_rqa_metadata.txt"
+    else:
+        metadata_filename = f"{dataset_name}_{target_channel}_rqa_metadata.txt"
+
+    metadata_file = output_dir / metadata_filename
+
+    with open(metadata_file, "w") as f:
+        # Write header
+        f.write(f"RQA Metadata for {dataset_name}\n")
+        f.write("=" * 50 + "\n\n")
+
+        # Write processing details
+        f.write("PROCESSING DETAILS\n")
+        f.write("-" * 30 + "\n")
+        f.write(f"Dataset: {dataset_name}\n")
+        f.write(f"Target channel: {target_channel}\n")
+        f.write(f"Normalize metrics: {normalize_metrics}\n")
+        f.write(f"Processing date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+        # Write channel information
+        f.write("CHANNEL INFORMATION\n")
+        f.write("-" * 30 + "\n")
+        f.write(f"Channel indices: {channel_metadata['channel_indices']}\n")
+        f.write(f"Channel names: {channel_metadata['channel_names']}\n\n")
+
+        # Write RQA parameters
+        f.write("RQA PARAMETERS\n")
+        f.write("-" * 30 + "\n")
+        for key, value in sorted(rqa_params.items()):
+            f.write(f"{key}: {value}\n")
+        f.write("\n")
+
+        # Write metric indices mapping
+        f.write("METRICS CHANNEL MAPPING\n")
+        f.write("-" * 30 + "\n")
+        f.write("The tensor's last dimension contains the following metrics:\n")
+        for i, metric in enumerate(rqa_params.get("metrics_to_use", [])):
+            f.write(f"Channel {i}: {metric}\n")
+
+    return metadata_file
+
+
 def log_memory_usage(logger):
     """Log current memory usage of the process."""
     try:
@@ -255,9 +329,13 @@ def setup_logging(log_dir: str = "./logs", suffix: str = "") -> logging.Logger:
 #### Actual processing functions ####
 
 
+# Update process_channel_band_with_gc to pass return_rqe parameter
 @delayed
 def process_channel_band_with_gc(
-    signal: np.ndarray, rqa_params: Dict[str, Any], normalize_metrics: bool
+    signal: np.ndarray,
+    rqa_params: Dict[str, Any],
+    normalize_metrics: bool,
+    return_rqe: bool,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Process a single channel/band with explicit garbage collection.
@@ -269,7 +347,10 @@ def process_channel_band_with_gc(
 
     # Process the data
     result = process_single_channel_band(
-        signal=signal, rqa_params=rqa_params, normalize_metrics=normalize_metrics
+        signal=signal,
+        rqa_params=rqa_params,
+        normalize_metrics=normalize_metrics,
+        return_rqe=return_rqe,
     )
 
     # Force garbage collection after processing
@@ -311,6 +392,7 @@ def process_dataset_channels(
     rqa_params: Dict[str, Any],
     target_channel: str,
     normalize_metrics: bool = False,
+    return_rqe: bool = False,  # Add this parameter
     dataset_name: str = "unknown",
     logger: Optional[logging.Logger] = None,
     status_dir: Optional[str] = None,
@@ -328,6 +410,8 @@ def process_dataset_channels(
         Channel name or "All" to process all channels except Cz
     normalize_metrics : bool
         Whether to normalize metrics
+    return_rqe : bool
+        Whether to compute RQE metrics
     dataset_name : str
         Name of the dataset for logging
     logger : Optional[logging.Logger]
@@ -337,8 +421,8 @@ def process_dataset_channels(
 
     Returns:
     --------
-    Tuple[np.ndarray, np.ndarray, np.ndarray]
-        RQA metrics, RQE values, and correlation values
+    Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]
+        RQA metrics, RQE values, correlation values, and channel metadata
     """
     if logger is None:
         logger = logging.getLogger("EEG_RQE_Processor")
@@ -434,6 +518,7 @@ def process_dataset_channels(
                     signal=signal,
                     rqa_params=rqa_params,
                     normalize_metrics=normalize_metrics,
+                    return_rqe=return_rqe,
                 )
 
     task_creation_time = time.time() - task_creation_start
@@ -722,9 +807,11 @@ def main():
         # Get RQA parameters from config
         rqa_params = config.get("rqa_parameters", {})
         normalize_metrics = config.get("normalize_metrics", False)
+        return_rqe = config.get("return_rqe", False)
 
         logger.info(f"RQA parameters: {rqa_params}")
         logger.info(f"Normalize metrics: {normalize_metrics}")
+        logger.info(f"Computing RQE metrics: {return_rqe}")
 
         # Get input directory and dataset filenames
         input_dir = config.get("input_directory", "./data")
@@ -766,6 +853,7 @@ def main():
                             rqa_params=rqa_params,
                             target_channel=target_channel,
                             normalize_metrics=normalize_metrics,
+                            return_rqe=return_rqe,
                             dataset_name=dataset_name,
                             logger=logger,
                             status_dir=status_dir,
@@ -777,10 +865,16 @@ def main():
 
                     # Save results - include channel information in filename
                     if target_channel.lower() == "all":
-                        output_filename = f"{dataset_name}_all_channels_rqe_results.npz"
+                        output_filename = (
+                            f"{dataset_name}_all_channels_rqa_results.npz"
+                            if not return_rqe
+                            else f"{dataset_name}_all_channels_rqe_results.npz"
+                        )
                     else:
                         output_filename = (
-                            f"{dataset_name}_{target_channel}_rqe_results.npz"
+                            f"{dataset_name}_{target_channel}_rqa_results.npz"
+                            if not return_rqe
+                            else f"{dataset_name}_{target_channel}_rqe_results.npz"
                         )
 
                     update_status_file(
@@ -790,20 +884,36 @@ def main():
                     )
                     output_file = output_dir / output_filename
                     logger.info(f"Saving results to {output_file}")
-                    np.savez_compressed(
-                        output_file,
-                        rqa_metrics=rqa_metrics,
-                        rqe_values=rqe_values,
-                        corr_values=corr_values,
+
+                    # Save data depending on whether we're computing RQE or just RQA
+                    if return_rqe:
+                        np.savez_compressed(
+                            output_file,
+                            rqa_metrics=rqa_metrics,
+                            rqe_values=rqe_values,
+                            corr_values=corr_values,
+                        )
+                    else:
+                        np.savez_compressed(
+                            output_file,
+                            rqa_metrics=rqa_metrics,
+                        )
+
+                    # Write metadata to a separate text file
+                    metadata_file = write_metadata_file(
+                        output_dir=output_dir,
+                        dataset_name=dataset_name,
+                        target_channel=target_channel,
                         rqa_params=rqa_params,
                         normalize_metrics=normalize_metrics,
                         channel_metadata=channel_metadata,
                     )
-                    logger.info(f"Results saved successfully")
+
+                    logger.info(f"Metadata saved to {metadata_file}")
                     update_status_file(
                         status_dir,
                         "save",
-                        f"Results saved for {dataset_name} - {target_channel}",
+                        f"Results and metadata saved for {dataset_name} - {target_channel}",
                     )
 
                     # Clean up to free memory

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-#SBATCH -J EEG_RQE_Ch_%j
+#SBATCH -J EEG_RQA_Ch_%j              # Updated job name to reflect RQA focus
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=64   # Using fewer cores for single channel processing
-#SBATCH --mem=128gb          # Less memory needed for single channel processing
-#SBATCH --time=24:00:00      # 24 hours should be enough for one channel
-#SBATCH --constraint=amd     # Selecting AMD nodes for high core count
-#SBATCH --error=rqe_ch_%a_%j.err
-#SBATCH --output=rqe_ch_%a_%j.out
-#SBATCH --array=0-30         # Process channels 0-30 (31 channels, excluding Cz)
+#SBATCH --cpus-per-task=32            # Reduced from 64 to 32 cores
+#SBATCH --mem=40gb                    # Reduced from 128GB to 40GB
+#SBATCH --time=10:00:00               # Reduced from 24h to 8h
+#SBATCH --constraint=amd              # Keep AMD nodes for high core count
+#SBATCH --error=rqa_ch_%a_%j.err      # Updated output filename
+#SBATCH --output=rqa_ch_%a_%j.out     # Updated output filename
+#SBATCH --array=0-30                  # Keep processing all channels except Cz
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=mpascual@uma.es
 
@@ -18,6 +18,8 @@ echo "Job started at $(date)"
 CHANNELS=("Fp1" "Fp2" "F7" "F3" "Fz" "F4" "F8" "FC5" "FC1" "FC2" "FC6" "T7"
     "C3" "C4" "T8" "TP9" "CP5" "CP1" "CP2" "CP6" "TP10" "P7" "P3" "Pz"
 "P4" "P8" "PO9" "O1" "Oz" "O2" "PO10" "Cz")
+
+COMPUTE_RQE=false
 
 # Get channel name for this array job
 if [ "$SLURM_ARRAY_TASK_ID" -lt "${#CHANNELS[@]}" ]; then
@@ -80,13 +82,13 @@ cp -r "$PROJ_DIR/pyproject.toml" "$MYLOCALSCRATCH/" # Copy setup files
 # Create/modify config file for this channel
 echo "Creating configuration file for channel $TARGET_CHANNEL..."
 cat > "$CONFIG_DIR"/rqe_config.yaml << EOF
-# Configuration for EEG RQE Processing on HPC - Channel: $TARGET_CHANNEL
+# Configuration for EEG RQA Processing on HPC - Channel: $TARGET_CHANNEL
 
 # Dask configuration
 dask:
-  n_workers: 16             # Using 16 workers for single channel
-  threads_per_worker: 4     # 4 threads per worker (16*4=64 total cores)
-  memory_limit: "7GB"       # ~7GB per worker (16*7=112GB < 128GB total)
+  n_workers: 24
+  threads_per_worker: 4
+  memory_limit: "1.5GB"
 
 # Directories
 input_directory: "$INPUT_DIR"
@@ -99,6 +101,9 @@ logging:
 
 # Channel to process
 target_channel: "$TARGET_CHANNEL"
+
+# Whether to compute RQE metrics (false = RQA metrics only)
+return_rqe: "$COMPUTE_RQE"
 
 # Datasets to process
 datasets:
@@ -189,7 +194,7 @@ fi
 echo "Processing completed at $(date)"
 
 # Copy results back to home directory
-RESULTS_DIR=/mnt/home/users/tic_163_uma/mpascual/execs/RQE/rqe_ch_${TARGET_CHANNEL}_$(date +%Y%m%d_%H%M%S)
+RESULTS_DIR=/mnt/home/users/tic_163_uma/mpascual/execs/RQA/rqa_ch_${TARGET_CHANNEL}_$(date +%Y%m%d_%H%M%S)
 echo "Copying results to $RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
 cp -rp "$OUTPUT_DIR"/* "$RESULTS_DIR"/ || echo "Warning: No output files to copy"
