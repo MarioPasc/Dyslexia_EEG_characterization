@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-#SBATCH -J EEG_RQA_Ch_%j              # Updated job name to reflect RQA focus
+#SBATCH -J EEG_RQA_Ch_%j
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32            # Reduced from 64 to 32 cores
-#SBATCH --mem=40gb                    # Reduced from 128GB to 40GB
-#SBATCH --time=10:00:00               # Reduced from 24h to 8h
-#SBATCH --constraint=amd              # Keep AMD nodes for high core count
-#SBATCH --error=rqa_ch_%a_%j.err      # Updated output filename
-#SBATCH --output=rqa_ch_%a_%j.out     # Updated output filename
-#SBATCH --array=0-30                  # Keep processing all channels except Cz
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=30gb
+#SBATCH --time=20:00:00
+#SBATCH --constraint=amd
+#SBATCH --error=rqa_ch_%a_%j.err
+#SBATCH --output=rqa_ch_%a_%j.out
+#SBATCH --array=0-30
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=mpascual@uma.es
 
@@ -29,37 +29,27 @@ else
     exit 1
 fi
 
-# Debug information
+# Reduced debug information - just essentials
 echo "========================================="
-echo "SLURM_JOB_ID: $SLURM_JOB_ID"
-echo "SLURM_ARRAY_TASK_ID: $SLURM_ARRAY_TASK_ID"
-echo "SLURM_CPUS_PER_TASK: $SLURM_CPUS_PER_TASK"
-echo "SLURM_MEM_PER_NODE: $SLURM_MEM_PER_NODE"
 echo "Processing channel: $TARGET_CHANNEL (index: $SLURM_ARRAY_TASK_ID)"
-echo "SLURM constraint: amd"
+echo "Cores: $SLURM_CPUS_PER_TASK, Memory: $SLURM_MEM_PER_NODE"
 echo "========================================="
 
 # Load required modules
-echo "Loading miniconda..."
 module load miniconda
-echo "Activating conda environment..."
 source activate pyddeeg
-
-# Print Python information for debugging
-which python
-python --version
-echo "Python path:"
-python -c "import sys; print(sys.path)"
-echo "Checking for required modules..."
-python -c "import numpy; print('NumPy found, version:', numpy.__version__)"
-python -c "import dask; print('Dask found, version:', dask.__version__)"
-
-echo "========================================="
 
 # Create a temp directory in localscratch
 MYLOCALSCRATCH="${LOCALSCRATCH}/${USER}/${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
 MYLOCALSCRATCH=$(echo "$MYLOCALSCRATCH" | sed 's|//|/|g')  # Remove double slashes
-echo "Creating local scratch directory: $MYLOCALSCRATCH"
+echo "Using local scratch: $MYLOCALSCRATCH"
+
+# Clean up existing directory if it exists (safe for parallel array jobs as each has unique ID)
+if [ -d "$MYLOCALSCRATCH" ]; then
+    echo "Removing existing scratch directory"
+    rm -rf --one-file-system "$MYLOCALSCRATCH"
+fi
+
 mkdir -p "$MYLOCALSCRATCH"
 
 # Define paths
@@ -71,16 +61,14 @@ LOG_DIR=$MYLOCALSCRATCH/logs
 STATUS_DIR=$MYLOCALSCRATCH/status
 
 # Create directories
-echo "Creating output directories..."
 mkdir -p "$OUTPUT_DIR" "$CONFIG_DIR" "$LOG_DIR" "$STATUS_DIR"
 
-# Copy necessary files to scratch
+# Copy necessary files to scratch (only what's needed)
 echo "Copying project files to scratch..."
 cp -r "$PROJ_DIR/src" "$MYLOCALSCRATCH/"
-cp -r "$PROJ_DIR/pyproject.toml" "$MYLOCALSCRATCH/" # Copy setup files
+cp -r "$PROJ_DIR/pyproject.toml" "$MYLOCALSCRATCH/"
 
-# Create/modify config file for this channel
-echo "Creating configuration file for channel $TARGET_CHANNEL..."
+# Create config file for this channel
 cat > "$CONFIG_DIR"/rqe_config.yaml << EOF
 # Configuration for EEG RQA Processing on HPC - Channel: $TARGET_CHANNEL
 
@@ -103,7 +91,7 @@ logging:
 target_channel: "$TARGET_CHANNEL"
 
 # Whether to compute RQE metrics (false = RQA metrics only)
-return_rqe: "$COMPUTE_RQE"
+return_rqe: ${COMPUTE_RQE}
 
 # Datasets to process
 datasets:
@@ -144,77 +132,49 @@ rqa_parameters:
 normalize_metrics: true
 EOF
 
-# Go to working directory
-echo "Changing to scratch directory..."
+# Go to working directory and set PYTHONPATH
 cd "$MYLOCALSCRATCH" || { echo "Failed to change directory to $MYLOCALSCRATCH"; exit 1; }
-
-# Set PYTHONPATH to find modules
-echo "Setting PYTHONPATH..."
 export PYTHONPATH="$MYLOCALSCRATCH:$PYTHONPATH"
-echo "PYTHONPATH: $PYTHONPATH"
-
-# Print monitoring instructions
-echo "To monitor real-time progress, use:"
-echo "  tail -f $LOG_DIR/rqe_processing_${TARGET_CHANNEL,,}*.log"
-echo ""
-echo "To check current status:"
-echo "  cat $STATUS_DIR/status.txt"
 
 # Execute script with timing
 echo "Starting EEG RQE Processing for channel $TARGET_CHANNEL at $(date)"
-echo "Executing Python script with config $CONFIG_DIR/rqe_config.yaml"
 
 SCRIPT_PATH="$MYLOCALSCRATCH/src/pyddeeg/signal_processing/preprocessing/pipelines/rqe_preproc_picasso.py"
-echo "Checking if script exists at: $SCRIPT_PATH"
-if [ -f "$SCRIPT_PATH" ]; then
-    echo "Script exists."
-else
+if [ ! -f "$SCRIPT_PATH" ]; then
     echo "ERROR: Script file not found at $SCRIPT_PATH"
-    # List directory contents to debug
-    echo "Directory contents:"
-    find "$MYLOCALSCRATCH/src/pyddeeg" -type f -name "*.py" | sort
+    find "$MYLOCALSCRATCH/src/pyddeeg" -type f -name "*.py" | sort | head -5
     exit 1
 fi
 
-# Option 1: Use direct path execution
-echo "Running script using direct path execution..."
+# Run the processing with timing
 time python "$SCRIPT_PATH" \
 --config "$CONFIG_DIR/rqe_config.yaml" \
 --cores "$SLURM_CPUS_PER_TASK" \
 --channel "$TARGET_CHANNEL" \
 --status-dir "$STATUS_DIR" \
---progress-interval 30
+--progress-interval 60  # Reduced progress output frequency
 
 # Check script exit status
-if [ $? -ne 0 ]; then
+if ! mycmd; then
     echo "ERROR: Python script execution failed!"
     exit 1
 fi
 
 echo "Processing completed at $(date)"
 
-# Copy results back to home directory
+# Copy results back with timestamp to avoid overwriting
 RESULTS_DIR=/mnt/home/users/tic_163_uma/mpascual/execs/RQA/rqa_ch_${TARGET_CHANNEL}_$(date +%Y%m%d_%H%M%S)
 echo "Copying results to $RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
-cp -rp "$OUTPUT_DIR"/* "$RESULTS_DIR"/ || echo "Warning: No output files to copy"
-cp -rp "$LOG_DIR"/* "$RESULTS_DIR"/ || echo "Warning: No log files to copy"
-cp -rp "$CONFIG_DIR"/* "$RESULTS_DIR"/ || echo "Warning: No config files to copy"
-cp -rp "$STATUS_DIR"/* "$RESULTS_DIR"/ || echo "Warning: No status files to copy"
-
-echo "Results copied to $RESULTS_DIR"
+cp -rp "$OUTPUT_DIR"/* "$RESULTS_DIR"/ 2>/dev/null || echo "No output files"
+cp -rp "$LOG_DIR"/* "$RESULTS_DIR"/ 2>/dev/null || echo "No log files"
+cp -rp "$CONFIG_DIR"/* "$RESULTS_DIR"/ 2>/dev/null || echo "No config files"
+cp -rp "$STATUS_DIR"/* "$RESULTS_DIR"/ 2>/dev/null || echo "No status files"
 
 # Clean up scratch space
-if cd "$LOCALSCRATCH/$USER"; then
-    if [ -n "$MYLOCALSCRATCH" ] && [ -d "$MYLOCALSCRATCH" ]; then
-        echo "Cleaning up scratch directory: $MYLOCALSCRATCH"
-        rm -rf --one-file-system "$MYLOCALSCRATCH"
-        echo "Local scratch directory cleaned"
-    else
-        echo "Warning: MYLOCALSCRATCH not found or not a directory"
-    fi
-else
-    echo "Warning: Could not change to LOCALSCRATCH/$USER directory"
+if [ -n "$MYLOCALSCRATCH" ] && [ -d "$MYLOCALSCRATCH" ]; then
+    echo "Cleaning up scratch directory"
+    rm -rf --one-file-system "$MYLOCALSCRATCH"
 fi
 
 echo "Job completed at $(date)"
