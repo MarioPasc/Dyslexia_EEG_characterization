@@ -129,7 +129,7 @@ rqa_parameters:
     - "PERM_ENT"
 
 # Whether to normalize metrics before RQE computation
-normalize_metrics: true
+normalize_metrics: false
 EOF
 
 # Go to working directory and set PYTHONPATH
@@ -155,7 +155,7 @@ time python "$SCRIPT_PATH" \
 --progress-interval 60  # Reduced progress output frequency
 
 # Check script exit status
-if ! mycmd; then
+if [ $? -ne 0 ]; then
     echo "ERROR: Python script execution failed!"
     exit 1
 fi
@@ -170,11 +170,5 @@ cp -rp "$OUTPUT_DIR"/* "$RESULTS_DIR"/ 2>/dev/null || echo "No output files"
 cp -rp "$LOG_DIR"/* "$RESULTS_DIR"/ 2>/dev/null || echo "No log files"
 cp -rp "$CONFIG_DIR"/* "$RESULTS_DIR"/ 2>/dev/null || echo "No config files"
 cp -rp "$STATUS_DIR"/* "$RESULTS_DIR"/ 2>/dev/null || echo "No status files"
-
-# Clean up scratch space
-if [ -n "$MYLOCALSCRATCH" ] && [ -d "$MYLOCALSCRATCH" ]; then
-    echo "Cleaning up scratch directory"
-    rm -rf --one-file-system "$MYLOCALSCRATCH"
-fi
 
 echo "Job completed at $(date)"
