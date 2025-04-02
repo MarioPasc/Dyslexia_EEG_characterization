@@ -50,9 +50,29 @@ ELECTRODE_ORDER: List[str] = [
     "Cz",
 ]
 
+METRIC_ORDER: List[str] = [
+    "RR",
+    "DET",
+    "L_max",
+    "L_mean",
+    "ENT",
+    "LAM",
+    "TT",
+    "V_max",
+    "V_mean",
+    "V_ENT",
+    "W_max",
+    "W_mean",
+    "W_ENT",
+    "CLEAR",
+    "PERM_ENT",
+]
+
 
 def reorganize_rqa_results(
-    path: str, output_path: Optional[str] = None
+    path: str,
+    stimuli: str,
+    output_path: Optional[str] = None,
 ) -> Dict[str, str]:
     """
     Process RQA data from all electrodes into combined tensors.
@@ -67,6 +87,7 @@ def reorganize_rqa_results(
 
     Args:
         path (str): Path to the directory containing electrode folders
+        stimuli: (str): Stimuli type from "slow_2hz", "syllable_8hz", or "phonem_20hz"
         output_path (Optional[str]): Path where processed files will be saved.
                                     If None, uses the input path.
 
@@ -179,7 +200,9 @@ def reorganize_rqa_results(
             combined_data = np.concatenate(data_list, axis=1)
 
             # Save the combined data
-            output_file = os.path.join(output_path, f"{file_type}_rqa_processed.npz")
+            output_file = os.path.join(
+                output_path, f"{file_type}_{stimuli}_rqa_processed.npz"
+            )
             np.savez_compressed(output_file, rqa_metrics=combined_data)
             print(
                 f"Saved {file_type} data with shape {combined_data.shape} to {output_file}"

@@ -51,4 +51,4 @@ rqa_parameters:
     - "PERM_ENT"
 
 # Whether to normalize metrics before RQE computation
-normalize_metrics: true
+normalize_metrics: false

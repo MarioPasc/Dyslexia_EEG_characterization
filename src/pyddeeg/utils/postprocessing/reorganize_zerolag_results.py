@@ -37,7 +37,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants
-STIMULI_MAPPING = {"2": "syllable_2hz", "8": "word_8hz", "20": "phonem_20hz"}
+STIMULI_MAPPING = {"2": "slow_2hz", "8": "syllable_8hz", "20": "phonem_20hz"}
 
 BAND_MAPPING = {0: "delta", 1: "theta", 2: "alpha", 3: "beta", 4: "gamma"}
 
