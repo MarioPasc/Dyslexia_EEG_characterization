@@ -15,12 +15,10 @@ In order to perform these test, we must remove features that are highly correlat
 | **Examine Redundancy Among Metrics** | Identify highly correlated or redundant RQA metrics                    | - Which metrics are highly correlated or effectively interchangeable?- Do any metrics cluster together, indicating redundancy?- Do I need dimension reduction?                                                                                                     | - Spearman’s correlation matrix- PCA or Factor Analysis (optional)                                                                                     | - Use multiple-comparison corrections (FDR or Bonferroni) for significance of correlations- Theoretical importance may justify retaining correlated metrics                                             |
 | **Identify Metrics That Discriminate Between Groups** | Determine which metrics differ most between CT and DD groups           | - Which metrics show significant differences across groups?- What effect sizes do we observe (practical vs. statistical significance)?- Should we treat channels/bands as repeated measures or analyze them separately?                                           | - Mann-Whitney U / Welch’s t-tests (for each metric)- Repeated-measures ANOVA or Friedman/Aligned Rank Transform (for multi-level data)- Effect sizes (Cohen’s d, Cliff’s delta) | - Apply multiple-comparisons correction- Factor in smaller sample sizes for DD group- Interpret p-values alongside effect sizes to gauge practical importance                                      |
 
-
-
 ## Objectives for this week
 
 - [X] Execute full RQA metric computation for all channels and patients
-- [ ] Build a RQA metric selection based off correlation analysis 
+- [ ] Build a RQA metric selection based off correlation analysis
 
 ## Weekly Project Time Tracking
 
