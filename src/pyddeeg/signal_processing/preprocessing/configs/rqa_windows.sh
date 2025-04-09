@@ -107,12 +107,9 @@ rqa_parameters:
   embedding_dim: 10
   radius: 0.8
   time_delay: 1
-  raw_signal_window_size: 100
-  rqa_space_window_size: 25
   min_diagonal_line: 5
   min_vertical_line: 1
   min_white_vertical_line: 1
-  stride: 7
   metrics_to_use:
     - "RR"
     - "DET"

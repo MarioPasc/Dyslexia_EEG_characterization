@@ -398,7 +398,7 @@ def process_dataset_for_window_size(
     current_rqa_params["raw_signal_window_size"] = window_size
 
     # Extract parameters for output shape calculation
-    stride = current_rqa_params.get("stride", 1)
+    stride = int(window_size / 2)  # Convert to integer explicitly
     metrics_to_use = current_rqa_params.get(
         "metrics_to_use", ["RR", "DET", "ENT", "TT"]
     )
