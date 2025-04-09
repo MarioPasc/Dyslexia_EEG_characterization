@@ -97,10 +97,10 @@ return_rqe: ${COMPUTE_RQE}
 
 # Datasets to process
 datasets:
-  CT_UP: "CT_UP_preprocess_2.npz"
-  DD_UP: "DD_UP_preprocess_2.npz"
-  CT_DOWN: "CT_DOWN_preprocess_2.npz"
-  DD_DOWN: "DD_DOWN_preprocess_2.npz"
+  CT_UP: "CT_UP_preprocess_20.npz"
+  DD_UP: "DD_UP_preprocess_20.npz"
+  CT_DOWN: "CT_DOWN_preprocess_20.npz"
+  DD_DOWN: "DD_DOWN_preprocess_20.npz"
 
 # RQA/RQE parameters
 rqa_parameters:
