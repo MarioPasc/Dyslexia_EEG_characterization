@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-#SBATCH -J EEG_RQA_Ch_%j
+#SBATCH -J EEG_RQA_Win_%j
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=30gb
 #SBATCH --time=20:00:00
 #SBATCH --constraint=amd
-#SBATCH --error=rqa_ch_%a_%j.err
-#SBATCH --output=rqa_ch_%a_%j.out
+#SBATCH --error=rqa_win_%a_%j.err
+#SBATCH --output=rqa_win_%a_%j.out
 #SBATCH --array=0-30
-#SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mail-user=mpascual@uma.es
 
 set -e
 echo "Job started at $(date)"
@@ -69,7 +67,7 @@ cp -r "$PROJ_DIR/src" "$MYLOCALSCRATCH/"
 cp -r "$PROJ_DIR/pyproject.toml" "$MYLOCALSCRATCH/"
 
 # Create config file for this channel
-cat > "$CONFIG_DIR"/rqe_config.yaml << EOF
+cat > "$CONFIG_DIR"/rqa_windows_config.yaml << EOF
 # Configuration for EEG RQA Processing on HPC - Channel: $TARGET_CHANNEL
 
 # Dask configuration
@@ -91,7 +89,7 @@ logging:
 target_channel: "$TARGET_CHANNEL"
 
 target_bandwidth: 4 # Gamma band
-window_sizes = [100, 150, 200, 250, 300]
+window_sizes: [100, 150, 200, 250, 300]
 
 
 # Whether to compute RQE metrics (false = RQA metrics only)
@@ -143,7 +141,7 @@ export PYTHONPATH="$MYLOCALSCRATCH:$PYTHONPATH"
 # Execute script with timing
 echo "Starting EEG RQE Processing for channel $TARGET_CHANNEL at $(date)"
 
-SCRIPT_PATH="$MYLOCALSCRATCH/src/pyddeeg/signal_processing/preprocessing/pipelines/rqe_preproc_picasso.py"
+SCRIPT_PATH="$MYLOCALSCRATCH/src/pyddeeg/signal_processing/preprocessing/pipelines/rqa_windows_picasso.py"
 if [ ! -f "$SCRIPT_PATH" ]; then
     echo "ERROR: Script file not found at $SCRIPT_PATH"
     find "$MYLOCALSCRATCH/src/pyddeeg" -type f -name "*.py" | sort | head -5
@@ -152,7 +150,7 @@ fi
 
 # Run the processing with timing
 time python "$SCRIPT_PATH" \
---config "$CONFIG_DIR/rqe_config.yaml" \
+--config "$CONFIG_DIR/rqa_windows_config.yaml" \
 --cores "$SLURM_CPUS_PER_TASK" \
 --channel "$TARGET_CHANNEL" \
 --status-dir "$STATUS_DIR" \
