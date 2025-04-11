@@ -1,11 +1,104 @@
 #!/usr/bin/env python3
 
 import os
-from typing import Union, Optional, Dict
+from typing import Union, Optional, Dict, List, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 from pyunicorn.timeseries import RecurrencePlot
 
+def compute_rqa_metrics_for_window(
+    window_signal: np.ndarray,
+    embedding_dim: int,
+    time_delay: int,
+    radius: float,
+    distance_metric: str,
+    min_diagonal_line: int = 2,
+    min_vertical_line: int = 2,
+    min_white_vertical_line: int = 1,
+    metrics_to_use: Optional[List[str]] = None,
+    cache_recurrence_plot: bool = False,
+) -> Tuple[Dict[str, float], Optional[RecurrencePlot]]:
+    """
+    Compute requested RQA metrics from a window of EEG signal.
+
+    Parameters:
+    -----------
+    window_signal : np.ndarray
+        Signal window to analyze
+    embedding_dim, time_delay, radius, etc. : Various parameters
+        RQA computation parameters
+    cache_recurrence_plot : bool
+        If True, return the RecurrencePlot object for potential reuse
+
+    Returns:
+    --------
+    metrics : Dict[str, float]
+        Dictionary of computed metrics
+    rp : Optional[RecurrencePlot]
+        RecurrencePlot object if cache_recurrence_plot is True, otherwise None
+    """
+
+    if distance_metric.lower() == "meandist":
+        from scipy.spatial.distance import pdist
+
+        distances = pdist(window_signal.reshape(-1, 1), metric="euclidean")
+        mean_dist = np.mean(distances) if len(distances) > 0 else 1.0
+        normalized_radius = radius / mean_dist
+        actual_radius = normalized_radius
+        distance_metric = "euclidean"
+    else:
+        actual_radius = radius
+
+    rp = RecurrencePlot(
+        time_series=window_signal,
+        dim=embedding_dim,
+        tau=time_delay,
+        metric=distance_metric,
+        threshold=actual_radius,
+        silence_level=2,
+    )
+
+    # Define metric computation functions
+    metric_functions = {
+        "RR": lambda: rp.recurrence_rate(),
+        "DET": lambda: rp.determinism(l_min=min_diagonal_line),
+        "L_max": lambda: rp.max_diaglength(),
+        "L_mean": lambda: rp.average_diaglength(l_min=min_diagonal_line),
+        "ENT": lambda: rp.diag_entropy(l_min=min_diagonal_line),
+        "LAM": lambda: rp.laminarity(v_min=min_vertical_line),
+        "TT": lambda: rp.trapping_time(v_min=min_vertical_line),
+        "V_max": lambda: rp.max_vertlength(),
+        "V_mean": lambda: rp.average_vertlength(v_min=min_vertical_line),
+        "V_ENT": lambda: rp.vert_entropy(v_min=min_vertical_line),
+        "W_max": lambda: rp.max_white_vertlength(),
+        "W_mean": lambda: rp.average_white_vertlength(w_min=min_white_vertical_line),
+        "W_ENT": lambda: rp.white_vert_entropy(w_min=min_white_vertical_line),
+        "CLEAR": lambda: (
+            rp.complexity_entropy() if hasattr(rp, "complexity_entropy") else None
+        ),
+        "PERM_ENT": lambda: (
+            rp.permutation_entropy() if hasattr(rp, "permutation_entropy") else None
+        ),
+    }
+
+    if metrics_to_use is None:
+        metrics_to_use = metric_functions.keys() # Use all!
+
+    # Compute requested metrics
+    metrics = {}
+    for metric in metrics_to_use:
+        if metric in metric_functions:
+            try:
+                metrics[metric] = metric_functions[metric]()
+            except Exception:
+                metrics[metric] = None
+        else:
+            metrics[metric] = None
+
+    if cache_recurrence_plot:
+        return metrics, rp
+    else:
+        return metrics, None
 
 def plot_rqa(
     data: np.ndarray,

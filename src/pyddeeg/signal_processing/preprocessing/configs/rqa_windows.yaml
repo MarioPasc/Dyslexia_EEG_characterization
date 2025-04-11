@@ -1,0 +1,54 @@
+
+# Dask configuration
+dask:
+  n_workers: 24
+  threads_per_worker: 4
+  memory_limit: "1.5GB"
+
+# Directories
+input_directory: /mnt/home/users/tic_163_uma/mpascual/fscratch/datasets/EEG
+output_directory: /mnt/home/users/tic_163_uma/mpascual/execs/
+
+# Logging
+logging:
+  directory: /mnt/home/users/tic_163_uma/mpascual/execs/logs
+  filename: "rqa_windows.log"
+  level: "INFO"
+
+# Channel to process
+target_channel: "$TARGET_CHANNEL"
+
+target_bandwidth: 4 # Gamma band
+window_sizes: [100, 150, 200, 250, 300]
+
+# Datasets to process
+datasets:
+  CT_UP: "CT_UP_preprocess_20.npz"
+  DD_UP: "DD_UP_preprocess_20.npz"
+  CT_DOWN: "CT_DOWN_preprocess_20.npz"
+  DD_DOWN: "DD_DOWN_preprocess_20.npz"
+
+# RQA/RQE parameters
+rqa_parameters:
+  embedding_dim: 10
+  radius: 0.8
+  time_delay: 1
+  min_diagonal_line: 5
+  min_vertical_line: 1
+  min_white_vertical_line: 1
+  metrics_to_use:
+    - "RR"
+    - "DET"
+    - "L_max"
+    - "L_mean"
+    - "ENT"
+    - "LAM"
+    - "TT"
+    - "V_max"
+    - "V_mean"
+    - "V_ENT"
+    - "W_max"
+    - "W_mean"
+    - "W_ENT"
+    - "CLEAR"
+    - "PERM_ENT"
