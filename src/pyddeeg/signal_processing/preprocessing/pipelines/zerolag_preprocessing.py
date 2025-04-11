@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Dict, Tuple, List
 from dataclasses import dataclass
 
+import gc
+
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
@@ -292,6 +294,7 @@ def main(config_path: str) -> None:
     """
     # Load configuration
     config = load_config(config_path)
+    output_dir = config.output_dir
 
     logger.info(
         f"Starting EEG preprocessing pipeline for age={config.age}, stim={config.stim}"
@@ -301,51 +304,77 @@ def main(config_path: str) -> None:
     # Load data
     data_C, data_D = load_data(config.data_dir, config.age, config.stim)
 
-    # Extract UP (0) and DOWN (1) data separately
-    data_c_up = data_C[:, :, :, 0]
-    data_c_down = data_C[:, :, :, 1]
-    data_d_up = data_D[:, :, :, 0]
-    data_d_down = data_D[:, :, :, 1]
+    # Process Control UP data
+    logger.info("Processing Control UP data")
+    if os.path.exists(os.path.join(output_dir, f"CT_UP_preprocess_{config.stim}.npz")):
+        logger.warning(
+            f"Preprocessed Control UP data already exists. Skipping this preprocessing stage."
+        )
+    else:
+        data_c_up = data_C[:, :, :, 0]
+        data_c_up_f = data_preprocessing(data_c_up, config)
+        np.savez(
+            os.path.join(output_dir, f"CT_UP_preprocess_{config.stim}.npz"),
+            data=data_c_up_f,
+        )
+        logger.info("Saved preprocessed Control UP data")
+        del data_c_up, data_c_up_f
+        gc.collect()
 
-    logger.info(
-        f"Data loaded successfully with shapes: "
-        f"CT_UP={data_c_up.shape}, CT_DOWN={data_c_down.shape}, "
-        f"DD_UP={data_d_up.shape}, DD_DOWN={data_d_down.shape}"
-    )
+    # Process Control DOWN data
+    logger.info("Processing Control DOWN data")
+    if os.path.exists(
+        os.path.join(output_dir, f"CT_DOWN_preprocess_{config.stim}.npz")
+    ):
+        logger.warning(
+            f"Preprocessed Control UP data already exists. Skipping this preprocessing stage."
+        )
+    else:
+        data_c_down = data_C[:, :, :, 1]
+        data_c_down_f = data_preprocessing(data_c_down, config)
+        np.savez(
+            os.path.join(output_dir, f"CT_DOWN_preprocess_{config.stim}.npz"),
+            data=data_c_down_f,
+        )
+        logger.info("Saved preprocessed Control DOWN data")
+        del data_c_down, data_c_down_f, data_C
+        gc.collect()
 
-    # Preprocess each dataset separately
-    logger.info("Preprocessing Control UP data")
-    data_c_up_f = data_preprocessing(data_c_up, config)
+    # Process Dyslexia UP data
+    logger.info("Processing Dyslexia UP data")
+    if os.path.exists(os.path.join(output_dir, f"DD_UP_preprocess_{config.stim}.npz")):
+        logger.warning(
+            f"Preprocessed Control UP data already exists. Skipping this preprocessing stage."
+        )
+    else:
+        data_d_up = data_D[:, :, :, 0]
+        data_d_up_f = data_preprocessing(data_d_up, config)
+        np.savez(
+            os.path.join(output_dir, f"DD_UP_preprocess_{config.stim}.npz"),
+            data=data_d_up_f,
+        )
+        logger.info("Saved preprocessed Dyslexia UP data")
+        del data_d_up, data_d_up_f
+        gc.collect()
 
-    logger.info("Preprocessing Control DOWN data")
-    data_c_down_f = data_preprocessing(data_c_down, config)
-
-    logger.info("Preprocessing Dyslexia UP data")
-    data_d_up_f = data_preprocessing(data_d_up, config)
-
-    logger.info("Preprocessing Dyslexia DOWN data")
-    data_d_down_f = data_preprocessing(data_d_down, config)
-
-    # Save results
-    output_dir = config.output_dir
-    logger.info(f"Saving preprocessed data to {output_dir}")
-
-    np.savez(
-        os.path.join(output_dir, f"CT_UP_preprocess_{config.stim}.npz"),
-        data=data_c_up_f,
-    )
-    np.savez(
-        os.path.join(output_dir, f"CT_DOWN_preprocess_{config.stim}.npz"),
-        data=data_c_down_f,
-    )
-    np.savez(
-        os.path.join(output_dir, f"DD_UP_preprocess_{config.stim}.npz"),
-        data=data_d_up_f,
-    )
-    np.savez(
-        os.path.join(output_dir, f"DD_DOWN_preprocess_{config.stim}.npz"),
-        data=data_d_down_f,
-    )
+    # Process Dyslexia DOWN data
+    logger.info("Processing Dyslexia DOWN data")
+    if os.path.exists(
+        os.path.join(output_dir, f"DD_DOWN_preprocess_{config.stim}.npz")
+    ):
+        logger.warning(
+            f"Preprocessed Control UP data already exists. Skipping this preprocessing stage."
+        )
+    else:
+        data_d_down = data_D[:, :, :, 1]
+        data_d_down_f = data_preprocessing(data_d_down, config)
+        np.savez(
+            os.path.join(output_dir, f"DD_DOWN_preprocess_{config.stim}.npz"),
+            data=data_d_down_f,
+        )
+        logger.info("Saved preprocessed Dyslexia DOWN data")
+        del data_d_down, data_d_down_f, data_D
+        gc.collect()
 
     logger.info("Preprocessing completed successfully")
 

@@ -1,8 +1,8 @@
 # EEG Preprocessing Configuration
 
 # Data paths
-data_dir: "/home/mariopasc/Python/Datasets/EEG/timeseries/original"        # Replace with your actual data directory
-output_dir: "/home/mariopasc/Python/Datasets/EEG/timeseries/processed/zerolag"     # Output directory for preprocessed files
+data_dir: "/home/mario/Python/Datasets/EEG/timeseries/original"        # Replace with your actual data directory
+output_dir: "/home/mario/Python/Datasets/EEG/timeseries/processed/zerolag"     # Output directory for preprocessed files
 
 # Processing parameters
 age: "7"           # Age group
