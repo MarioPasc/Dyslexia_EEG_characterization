@@ -201,8 +201,8 @@ def load_config(yaml_path: str) -> RQAConfig:
         datasets=config_dict['datasets'],
         
         # Target attributes
-        target_channel=target_channel,
-        target_bandwidth=config_dict['target_bandwidth'],
+        target_channel=int(target_channel),
+        target_bandwidth=int(config_dict['target_bandwidth']),
         
         # RQA parameters
         embedding_dim=config_dict['rqa_parameters']['embedding_dim'],
