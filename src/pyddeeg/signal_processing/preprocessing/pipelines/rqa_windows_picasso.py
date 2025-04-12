@@ -18,9 +18,9 @@ from dataclasses import dataclass
 from typing import List, Dict, Optional, Any, Callable
 from pyddeeg.signal_processing.rqa_toolbox.utils import extract_signal_windows
 from pyddeeg.signal_processing.rqa_toolbox.rqa import compute_rqa_metrics_for_window
+from pyddeeg.signal_processing.preprocessing.pipelines import CHANNEL_NAME_TO_INDEX
 
 # Add Dask imports
-import dask
 from dask import delayed
 from dask.distributed import Client, LocalCluster, progress
 
@@ -183,6 +183,16 @@ def load_config(yaml_path: str) -> RQAConfig:
     dask_threads_per_worker = dask_config.get('threads_per_worker', 1)
     dask_memory_limit = dask_config.get('memory_limit', "4GB")
     
+    # Handle channel specification (name or index)
+    target_channel = config_dict['target_channel']
+    if isinstance(target_channel, str) and target_channel in CHANNEL_NAME_TO_INDEX:
+        target_channel = CHANNEL_NAME_TO_INDEX[target_channel]
+    else:
+        # Convert string indices to integers if needed
+        target_channel = int(target_channel) if not isinstance(target_channel, int) else target_channel
+        if target_channel not in CHANNEL_NAME_TO_INDEX.values():
+            raise ValueError(f"Invalid target channel: {target_channel}. Must be a valid index or channel name.")
+
     # Create unified configuration object
     return RQAConfig(
         # Directory and dataset attributes
@@ -191,7 +201,7 @@ def load_config(yaml_path: str) -> RQAConfig:
         datasets=config_dict['datasets'],
         
         # Target attributes
-        target_channel=int(config_dict['target_channel']) if not isinstance(config_dict['target_channel'], int) else config_dict['target_channel'],
+        target_channel=target_channel,
         target_bandwidth=config_dict['target_bandwidth'],
         
         # RQA parameters
