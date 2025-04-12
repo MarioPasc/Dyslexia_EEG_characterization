@@ -411,7 +411,8 @@ def process_dataset(
         num_patients, num_electrodes, num_points, num_bands = data.shape
         
         logger.info(f"Dataset shape: {data.shape} (patients, electrodes, points, bands)")
-        
+        logger.info(f"Number of patients: {num_patients}, Number of electrodes: {num_electrodes}, Number of points: {num_points}, Number of bands: {num_bands}")
+        logger.info(f"Target channel: {config.target_channel}, Target bandwidth: {config.target_bandwidth}")
         # Check if channel and band indices are valid
         if config.target_channel >= num_electrodes:
             raise ValueError(f"Target channel index {config.target_channel} is out of bounds (max: {num_electrodes-1})")
