@@ -2,8 +2,8 @@
 #SBATCH -J EEG_RQA_Win_%j
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=100gb
-#SBATCH --time=2-00:00:00
+#SBATCH --mem=16gb
+#SBATCH --time=20:00:00
 #SBATCH --constraint=amd
 #SBATCH --error=rqa_win_%a_%j.err
 #SBATCH --output=rqa_win_%a_%j.out
