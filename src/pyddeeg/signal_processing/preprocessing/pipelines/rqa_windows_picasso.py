@@ -529,7 +529,7 @@ def process_dataset(
                     
                     for window_size, metrics_tensor in patient_results.items():
                         results_by_window[window_size]['results_tensor'][patient_idx, :, :] = metrics_tensor
-        
+
         # Create summary statistics
         dataset_results = {
             'dataset_name': dataset_name,
@@ -540,6 +540,10 @@ def process_dataset(
         }
         
         logger.info(f"Dataset {dataset_name} processed successfully.")
+        logger.info("Cleaning up dataset memory")
+        del data
+        import gc
+        gc.collect()
         return dataset_results
     
     except Exception as e:
@@ -592,6 +596,10 @@ def process_all_datasets(config: RQAConfig, logger: logging.Logger, client: Clie
                 logger=logger
             )
             
+            # Force garbage collection
+            import gc
+            gc.collect()
+
         except Exception as e:
             logger.error(f"Error processing dataset {dataset_name}: {str(e)}")
             # Continue with other datasets even if one fails
