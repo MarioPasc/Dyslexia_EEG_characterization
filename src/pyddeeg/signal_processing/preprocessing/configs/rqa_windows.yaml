@@ -1,25 +1,13 @@
-
-# Dask configuration
+# Dask parallel processing configuration
 dask:
-  n_workers: 24
-  threads_per_worker: 4
-  memory_limit: "1.5GB"
-
+  use_dask: true
+  n_workers: 16  # Number of worker processes to spawn
+  threads_per_worker: 2  # Number of threads per worker
+  memory_limit: "8GB"  # Memory limit per worker
+  
 # Directories
 input_directory: /mnt/home/users/tic_163_uma/mpascual/fscratch/datasets/EEG
 output_directory: /mnt/home/users/tic_163_uma/mpascual/execs/
-
-# Logging
-logging:
-  directory: /mnt/home/users/tic_163_uma/mpascual/execs/logs
-  filename: "rqa_windows.log"
-  level: "INFO"
-
-# Channel to process
-target_channel: "$TARGET_CHANNEL"
-
-target_bandwidth: 4 # Gamma band
-window_sizes: [100, 150, 200, 250, 300]
 
 # Datasets to process
 datasets:
@@ -27,6 +15,17 @@ datasets:
   DD_UP: "DD_UP_preprocess_20.npz"
   CT_DOWN: "CT_DOWN_preprocess_20.npz"
   DD_DOWN: "DD_DOWN_preprocess_20.npz"
+
+# Logging
+logging:
+  directory: /mnt/home/users/tic_163_uma/mpascual/execs/logs
+  filename: "rqa_windows.log"
+  level: "INFO"
+
+# Processing parameters
+target_channel: "$TARGET_CHANNEL"
+target_bandwidth: 4 
+window_sizes: [50, 100, 150, 200]
 
 # RQA/RQE parameters
 rqa_parameters:

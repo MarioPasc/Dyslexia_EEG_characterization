@@ -2,8 +2,8 @@
 #SBATCH -J EEG_RQA_Win_%j
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=30gb
-#SBATCH --time=20:00:00
+#SBATCH --mem=100gb
+#SBATCH --time=2-00:00:00
 #SBATCH --constraint=amd
 #SBATCH --error=rqa_win_%a_%j.err
 #SBATCH --output=rqa_win_%a_%j.out
@@ -17,7 +17,7 @@ CHANNELS=("Fp1" "Fp2" "F7" "F3" "Fz" "F4" "F8" "FC5" "FC1" "FC2" "FC6" "T7"
     "C3" "C4" "T8" "TP9" "CP5" "CP1" "CP2" "CP6" "TP10" "P7" "P3" "Pz"
 "P4" "P8" "PO9" "O1" "Oz" "O2" "PO10" "Cz")
 
-COMPUTE_RQE=false
+TARGET_BANDWIDTH=4 # GAMMA
 
 # Get channel name for this array job
 if [ "$SLURM_ARRAY_TASK_ID" -lt "${#CHANNELS[@]}" ]; then
@@ -70,30 +70,16 @@ cp -r "$PROJ_DIR/pyproject.toml" "$MYLOCALSCRATCH/"
 cat > "$CONFIG_DIR"/rqa_windows_config.yaml << EOF
 # Configuration for EEG RQA Processing on HPC - Channel: $TARGET_CHANNEL
 
-# Dask configuration
+# Dask parallel processing configuration
 dask:
-  n_workers: 24
-  threads_per_worker: 4
-  memory_limit: "1.5GB"
-
+  use_dask: true
+  n_workers: 16  # Number of worker processes to spawn
+  threads_per_worker: 2  # Number of threads per worker
+  memory_limit: "8GB"  # Memory limit per worker
+  
 # Directories
 input_directory: "$INPUT_DIR"
 output_directory: "$OUTPUT_DIR"
-
-# Logging
-logging:
-  directory: "$LOG_DIR"
-  level: "INFO"
-
-# Channel to process
-target_channel: "$TARGET_CHANNEL"
-
-target_bandwidth: 4 # Gamma band
-window_sizes: [100, 150, 200, 250, 300]
-
-
-# Whether to compute RQE metrics (false = RQA metrics only)
-return_rqe: ${COMPUTE_RQE}
 
 # Datasets to process
 datasets:
@@ -101,6 +87,17 @@ datasets:
   DD_UP: "DD_UP_preprocess_20.npz"
   CT_DOWN: "CT_DOWN_preprocess_20.npz"
   DD_DOWN: "DD_DOWN_preprocess_20.npz"
+
+# Logging
+logging:
+  directory: "$LOG_DIR"
+  filename: "rqa_windows.log"
+  level: "INFO"
+
+# Processing parameters
+target_channel: "$TARGET_CHANNEL"
+target_bandwidth: "$TARGET_BANDWIDTH" 
+window_sizes: [50, 100, 150, 200]
 
 # RQA/RQE parameters
 rqa_parameters:
@@ -126,9 +123,6 @@ rqa_parameters:
     - "W_ENT"
     - "CLEAR"
     - "PERM_ENT"
-
-# Whether to normalize metrics before RQE computation
-normalize_metrics: false
 EOF
 
 # Go to working directory and set PYTHONPATH
@@ -148,10 +142,6 @@ fi
 # Run the processing with timing
 time python "$SCRIPT_PATH" \
 --config "$CONFIG_DIR/rqa_windows_config.yaml" \
---cores "$SLURM_CPUS_PER_TASK" \
---channel "$TARGET_CHANNEL" \
---status-dir "$STATUS_DIR" \
---progress-interval 60  # Reduced progress output frequency
 
 # Check script exit status
 if [ $? -ne 0 ]; then

@@ -30,7 +30,7 @@ from dask import delayed
 
 import threading
 
-from pyddeeg.signal_processing.rqa_toolbox.rqe_parallelizable import (
+from pyddeeg.signal_processing.rqa_toolbox.rqe import (
     process_single_channel_band,
 )
 
