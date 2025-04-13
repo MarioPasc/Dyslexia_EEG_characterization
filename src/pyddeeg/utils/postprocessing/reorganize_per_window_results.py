@@ -8,7 +8,7 @@ This script reorganizes EEG RQA data from electrode-indexed to window-size-index
 import os
 import numpy as np
 import argparse
-
+import json  
 
 def load_data(raw_dir):
     """
@@ -94,12 +94,76 @@ def reorganize_data(data, window_sizes, electrode_indexed_dir):
                 }
                 
                 # Determine output directory based on condition
-                output_dir = up_dir if "UP" in condition else down_dir
+                # More precise check to distinguish UP vs DOWN conditions
+                if condition.endswith("_UP"):
+                    output_dir = up_dir
+                elif condition.endswith("_DOWN"):
+                    output_dir = down_dir
+                else:
+                    print(f"Warning: Unrecognized condition format: {condition}")
+                    continue
                 output_file = os.path.join(output_dir, f"{electrode}_{condition}.npz")
                 np.savez(output_file, **metrics)
         
     print(f"Data reorganization complete. Files saved to {electrode_indexed_dir}")
 
+def build_dataset_index(electrode_indexed_dir, output_file=None):
+    """
+    Build a dictionary indexing all the data files by window, direction (up/down), and electrode.
+    Save this index as a JSON file.
+    
+    Parameters:
+    -----------
+    electrode_indexed_dir : str
+        Root directory for electrode-indexed data
+    output_file : str, optional
+        Path to save the JSON index. If None, saves to 'dataset_index.json' in electrode_indexed_dir
+        
+    Returns:
+    --------
+    dataset : dict
+        Dictionary with structure: {window: {up/down: {electrode: [file_paths]}}}
+    """
+    if output_file is None:
+        output_file = os.path.join(electrode_indexed_dir, "dataset_index.json")
+        
+    dataset = {}
+    for window in os.listdir(electrode_indexed_dir):
+        window_path = os.path.join(electrode_indexed_dir, window)
+        if not os.path.isdir(window_path):
+            continue
+            
+        dataset[window] = {}
+        for updown in os.listdir(window_path):
+            updown_path = os.path.join(window_path, updown)
+            if not os.path.isdir(updown_path):
+                continue
+                
+            dataset[window][updown] = {}
+            for electrode_file in os.listdir(updown_path):
+                electrode = electrode_file.split("_")[0]
+                if electrode not in dataset[window][updown]:
+                    dataset[window][updown][electrode] = []
+                    
+                electrode_path = os.path.join(updown_path, electrode_file)
+                if os.path.isfile(electrode_path) and electrode_path not in dataset[window][updown][electrode]:
+                    dataset[window][updown][electrode].append(electrode_path)
+    """
+    # Convert to relative paths for better portability
+    for window in dataset:
+        for updown in dataset[window]:
+            for electrode in dataset[window][updown]:
+                dataset[window][updown][electrode] = [
+                    os.path.relpath(path, start=electrode_indexed_dir)
+                    for path in dataset[window][updown][electrode]
+                ]
+    """
+    # Save to JSON file
+    with open(output_file, 'w') as f:
+        json.dump(dataset, f, indent=2)
+        
+    print(f"Dataset index saved to {output_file}")
+    return dataset
 
 def main(root_dir=None, raw_dir=None, processed_dir=None, electrode_indexed_dir=None):
     """
@@ -139,6 +203,8 @@ def main(root_dir=None, raw_dir=None, processed_dir=None, electrode_indexed_dir=
     # Reorganize data
     reorganize_data(data, window_sizes, electrode_indexed_dir)
 
+    # Build dataset index
+    build_dataset_index(electrode_indexed_dir)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Reorganize EEG RQA data by window size.")
