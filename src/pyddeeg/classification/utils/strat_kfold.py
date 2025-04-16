@@ -106,7 +106,7 @@ def stratified_kfold(
     
     # Save to JSON if output_file is provided
     if output_file:
-        output_path = Path(output_file)
+        output_path = Path(os.path.join(output_file, f"stratified_kfold_indexes.json"))
         # Create directory if it doesn't exist
         output_path.parent.mkdir(parents=True, exist_ok=True)
         

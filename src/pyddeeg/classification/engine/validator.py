@@ -9,7 +9,7 @@ from sklearn.metrics import (
     roc_curve, auc, precision_recall_curve, average_precision_score
 )
 
-from pyddeeg.classification.models.EEGWindowModel import EEGClassifier
+from pyddeeg.classification.models.window_model import EEGClassifier
 from pyddeeg.classification.dataloaders import create_labeled_dataset, EEGDataset
 
 

@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import accuracy_score, classification_report, roc_curve, auc
 
-from pyddeeg.classification.models.EEGWindowModel import EEGClassifier, ModelConfig, create_model_config
+from pyddeeg.classification.models.window_model import EEGClassifier, ModelConfig, create_model_config
 from pyddeeg.classification.dataloaders import create_labeled_dataset, EEGDataset
 from pyddeeg.classification.utils.strat_kfold import stratified_kfold
 
