@@ -165,7 +165,7 @@ def build_dataset_index(electrode_indexed_dir, output_file=None):
     print(f"Dataset index saved to {output_file}")
     return dataset
 
-def main(root_dir=None, raw_dir=None, processed_dir=None, electrode_indexed_dir=None):
+def main(root_dir=None, raw_dir=None, output_dir=None):
     """
     Main function that orchestrates the data reorganization process.
     
@@ -175,10 +175,8 @@ def main(root_dir=None, raw_dir=None, processed_dir=None, electrode_indexed_dir=
         Root directory for all data
     raw_dir : str, optional
         Directory containing raw data
-    processed_dir : str, optional
-        Directory for processed output
-    electrode_indexed_dir : str, optional
-        Directory for electrode-indexed output
+    output_dir : str, optional
+        Directory for output
     """
     # Set default paths if not provided
     if root_dir is None:
@@ -187,38 +185,32 @@ def main(root_dir=None, raw_dir=None, processed_dir=None, electrode_indexed_dir=
     if raw_dir is None:
         raw_dir = os.path.join(root_dir, "raw")
     
-    if processed_dir is None:
-        processed_dir = os.path.join(root_dir, "dataset_indexed")
-    
-    if electrode_indexed_dir is None:
-        electrode_indexed_dir = os.path.join(root_dir, "electrode_indexed")
+    if output_dir is None:
+        output_dir = os.path.join(root_dir, "dataset")
     
     # Create output directory if it doesn't exist
-    os.makedirs(processed_dir, exist_ok=True)
-    os.makedirs(electrode_indexed_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
     
     # Load data and get window sizes
     data, window_sizes = load_data(raw_dir)
     
     # Reorganize data
-    reorganize_data(data, window_sizes, electrode_indexed_dir)
+    reorganize_data(data, window_sizes, output_dir)
 
     # Build dataset index
-    build_dataset_index(electrode_indexed_dir)
+    build_dataset_index(output_dir)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Reorganize EEG RQA data by window size.")
     parser.add_argument("--root-dir", default="/home/mario/Python/Datasets/EEG/timeseries/processed/rqa_windows/",
                         help="Root directory for all data")
     parser.add_argument("--raw-dir", help="Directory containing raw data")
-    parser.add_argument("--processed-dir", help="Directory for processed output")
-    parser.add_argument("--electrode-indexed-dir", help="Directory for electrode-indexed output")
+    parser.add_argument("--output-dir", help="Directory for output")
     
     args = parser.parse_args()
     
     main(
         root_dir=args.root_dir,
         raw_dir=args.raw_dir,
-        processed_dir=args.processed_dir,
-        electrode_indexed_dir=args.electrode_indexed_dir
+        output_dir=args.output_dir
     )

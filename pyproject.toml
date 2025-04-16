@@ -11,19 +11,18 @@ classifiers = [
 ]
 dependencies = [
   "mne",
-  "numpy",
+  "scikit-learn",
   "scipy",
   "matplotlib",
   "scienceplots",
   "pyunicorn",
-  "pandas>=1.0.0,<2.0.0",
+  "pandas",
   "Scikit-Learn",
   "dask",
   "PyYAML",
   "distributed",
   "psutil",
-  "statsmodels",
-  "ppscore",
+  "ipykernel"
 ]
 description = "A Python library that contains all the functions used to perform experiments on EEG data for the analysis and characterization of Developmental Dyslexia (DD)."
 keywords = ["eeg", "machine learning", "recurrence analysis"]
@@ -38,9 +37,6 @@ version = "0.1.0"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.black]
-line_length = 88
 
 [[tool.mypy.overrides]]
 ignore_missing_imports = true
