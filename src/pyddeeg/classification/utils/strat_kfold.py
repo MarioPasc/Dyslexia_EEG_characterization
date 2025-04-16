@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.model_selection import StratifiedKFold
 
 
-def create_stratified_kfolds(
+def stratified_kfold(
     root_path: Union[str, Path],
     window: str = "window_200",
     direction: str = "up",
@@ -36,8 +36,7 @@ def create_stratified_kfolds(
     """
     # Prepare paths
     root_path = Path(root_path)
-    electrode_indexed = os.path.join(root_path, "electrode_indexed")
-    dataset_indexes_path = os.path.join(electrode_indexed, "dataset_index.json")
+    dataset_indexes_path = os.path.join(root_path, "dataset_index.json")
     
     # Load dataset indexes
     with open(dataset_indexes_path, "r") as f:
@@ -141,3 +140,78 @@ def load_stratified_kfolds(
         fold_info["folds"][i]["ct_test"] = np.array(fold["ct_test"], dtype=np.int32)
     
     return fold_info
+
+def create_labeled_dataset(
+    dd_data: np.ndarray,
+    ct_data: np.ndarray,
+    fold_info: dict,
+    fold_index: int = 0
+) -> tuple:
+    """
+    Create training and testing datasets with labels incorporated as an additional dimension.
+    
+    Args:
+        dd_data: Dyslexia data with shape (n_dd_patients, n_metrics, n_timepoints)
+        ct_data: Control data with shape (n_ct_patients, n_metrics, n_timepoints)
+        fold_info: Dictionary containing fold information from stratified_kfold
+        fold_index: Which fold to use (default: 0)
+        
+    Returns:
+        Tuple containing:
+        - train_data: Original training data
+        - test_data: Original testing data
+        - train_with_labels: Training data with labels as additional dimension
+        - test_with_labels: Testing data with labels as additional dimension
+        - train_labels: Training labels
+        - test_labels: Testing labels
+    """
+    # Get fold information
+    fold = fold_info.get("folds", [])[fold_index]
+    dd_train_index = fold.get("dd_train", [])
+    ct_train_index = fold.get("ct_train", [])
+    dd_test_index = fold.get("dd_test", [])
+    ct_test_index = fold.get("ct_test", [])
+    
+    # Create labels
+    dd_labels = np.ones(dd_data.shape[0])
+    ct_labels = np.zeros(ct_data.shape[0])
+    
+    # Split data based on fold indices
+    dd_train = dd_data[dd_train_index, :, :]
+    dd_test = dd_data[dd_test_index, :, :]
+    ct_train = ct_data[ct_train_index, :, :]
+    ct_test = ct_data[ct_test_index, :, :]
+    
+    # Split labels based on fold indices
+    dd_train_labels = dd_labels[dd_train_index]
+    dd_test_labels = dd_labels[dd_test_index]
+    ct_train_labels = ct_labels[ct_train_index]
+    ct_test_labels = ct_labels[ct_test_index]
+    
+    # Concatenate data
+    train_data = np.concatenate((dd_train, ct_train), axis=0)
+    test_data = np.concatenate((dd_test, ct_test), axis=0)
+    
+    # Concatenate labels
+    train_labels = np.concatenate((dd_train_labels, ct_train_labels))
+    test_labels = np.concatenate((dd_test_labels, ct_test_labels))
+    
+    # Reshape labels to be compatible with data for concatenation
+    train_labels_expanded = train_labels[:, np.newaxis, np.newaxis]  # Shape becomes (n_samples, 1, 1)
+    test_labels_expanded = test_labels[:, np.newaxis, np.newaxis]    # Shape becomes (n_samples, 1, 1)
+    
+    # Broadcast labels to match the time points dimension (window-level labels)
+    train_labels_broadcast = np.broadcast_to(
+        train_labels_expanded, 
+        (train_data.shape[0], 1, train_data.shape[2])  # (n_samples, 1, n_timepoints)
+    )
+    test_labels_broadcast = np.broadcast_to(
+        test_labels_expanded, 
+        (test_data.shape[0], 1, test_data.shape[2])    # (n_samples, 1, n_timepoints)
+    )
+    
+    # Concatenate along metrics dimension (axis=1)
+    train_with_labels = np.concatenate((train_data, train_labels_broadcast), axis=1)
+    test_with_labels = np.concatenate((test_data, test_labels_broadcast), axis=1)
+    
+    return train_data, test_data, train_with_labels, test_with_labels, train_labels, test_labels
