@@ -132,7 +132,7 @@ class EEGClassifier:
             Loaded EEGModel instance
         """
         return joblib.load(model_path)
-    
+
 def create_model_config(
     model_type: str = "histogram_gbm",
     hyperparameters: Dict[str, Any] = None,

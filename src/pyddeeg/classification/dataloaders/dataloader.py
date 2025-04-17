@@ -48,25 +48,30 @@ class EEGDataset:
             for key, value in self.metadata.items():
                 print(f"    {key}: {value}")
     
-    def get_patient_predictions(self, y_pred: np.ndarray) -> np.ndarray:
+    def get_patient_predictions(self, y_pred: np.ndarray, is_training: bool = False) -> np.ndarray:
         """
         Reshape window-level predictions back to patient-level structure.
         
         Args:
             y_pred: Predictions from sklearn model with shape (n_patients*n_timepoints,)
-            
+            is_training: Whether these predictions are for training data
+                
         Returns:
             Predictions reshaped to (n_patients, n_timepoints)
         """
-        num_test_patients = len(self.dd_test_indices) + len(self.ct_test_indices)
-        n_timepoints = self.metadata.get("n_timepoints", len(y_pred) // num_test_patients)
+        if is_training:
+            num_patients = len(self.dd_train_indices) + len(self.ct_train_indices)
+        else:
+            num_patients = len(self.dd_test_indices) + len(self.ct_test_indices)
         
-        predictions_by_patient = np.zeros((num_test_patients, n_timepoints))
-        for i in range(num_test_patients):
+        n_timepoints = self.metadata.get("n_timepoints", len(y_pred) // num_patients)
+        
+        predictions_by_patient = np.zeros((num_patients, n_timepoints))
+        for i in range(num_patients):
             start_idx = i * n_timepoints
             end_idx = (i+1) * n_timepoints
             predictions_by_patient[i, :] = y_pred[start_idx:end_idx]
-            
+                
         return predictions_by_patient
 
 
