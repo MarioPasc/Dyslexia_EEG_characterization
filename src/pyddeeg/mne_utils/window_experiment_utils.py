@@ -314,8 +314,6 @@ def compare_patients(
     
     return evoked_list
 
-# ...existing code...
-
 def create_group_comparison_plot(
     patient_index: int,
     window_size: str,

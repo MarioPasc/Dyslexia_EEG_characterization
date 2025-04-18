@@ -12,7 +12,6 @@ EEG_CHANNELS = [
 # Create a mapping from channel name to index
 CHANNEL_NAME_TO_INDEX = {name: idx for idx, name in enumerate(EEG_CHANNELS)}
 
-
 # Dictionary mapping metric names to their indices
 RQA_METRICS = [
 "RR",
