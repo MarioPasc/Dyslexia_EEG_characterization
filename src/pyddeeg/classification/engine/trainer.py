@@ -36,6 +36,7 @@ from sklearn.pipeline import make_pipeline
 
 from pyddeeg import RQA_METRICS
 from pyddeeg.classification.dataloaders import EEGDataset
+from pyddeeg.classification import logger
 
 __all__: Tuple[str, ...] = (
     "classification_per_electrode",
@@ -73,6 +74,7 @@ def _make_epochs(elec: str, X: np.ndarray, sfreq: float) -> mne.EpochsArray:
             "ignore", "Missing channel location", RuntimeWarning, "mne"
         )
         epochs.set_montage("standard_1020", on_missing="ignore")
+    logger.info(f"Epochs shape: {epochs.get_data().shape}")  # Should be (n_subjects, n_metrics, n_windows)
     return epochs
 
 
@@ -138,6 +140,9 @@ def classification_per_electrode(
     # 2. Fold-wise decision scores (per subject) for advanced stats
     # ------------------------------------------------------------------
     est_dec = SlidingEstimator(base, scoring=None, n_jobs=n_jobs)
+    logger.info(f"== Model Configurations ==")
+    logger.info(f"{model.__class__.__name__} configuration: \n{model.get_params()}")
+    logger.info(f"SlidingEstimator configuration: {est_dec}")
     proba = cross_val_predict(
         est_dec,
         X=epochs.get_data(),
@@ -146,8 +151,10 @@ def classification_per_electrode(
         groups=groups,
         method="predict_proba",
         n_jobs=n_jobs,
-    )  # → (N, 2, T)
-    decision_scores = proba[:, pos_label, :]
+    )  # → (N, T, 2)
+    logger.info(f"PredProbs shape: {proba.shape}")  # Should be (n_subjects, n_windows, 2)
+    logger.info("==============================")
+    decision_scores = proba[:, :, pos_label]  # (N, T)
 
     # ------------------------------------------------------------------
     # 3. Fold-level AUC tensors (ROC and PR)

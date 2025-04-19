@@ -6,6 +6,7 @@ from matplotlib.axes import Axes
 from pyddeeg import RQA_METRICS
 from pyddeeg.classification.dataloaders import EEGDataset
 from pyddeeg.classification.utils.time_domain_parser import window_to_time_domain
+from pyddeeg.classification import logger
 
 def plot_classification_results(
     results: Dict[str, Any],
@@ -24,9 +25,8 @@ def plot_classification_results(
     Parameters
     ----------
     results : Dict[str, Any]
-        Results dictionary from compute_auc_per_electrode function.
-        Must contain 'mean_roc', 'std_roc' (or 'mean_pr', 'std_pr' if metric="pr"),
-        and 'evoked_patterns'.
+        Results dictionary from classification_per_electrode function.
+        Must contain 'fold_auc' tensor and 'patterns'.
     electrode : str
         Name of the electrode used for classification (e.g., 'Fz', 'T7').
     dataset : EEGDataset
@@ -67,7 +67,7 @@ def plot_classification_results(
         
     Examples
     --------
-    >>> results = trainer.compute_auc_per_electrode("T7", dataset, model)
+    >>> results = trainer.classification_per_electrode("T7", dataset, model)
     >>> fig, (ax1, ax2) = plot_classification_results(
     ...     results, 
     ...     "T7", 
@@ -85,11 +85,22 @@ def plot_classification_results(
     if metric not in ["roc", "pr"]:
         raise ValueError("metric must be 'roc' or 'pr'")
     
-    mean_key = f"mean_{metric}"
-    std_key = f"std_{metric}"
+    if "fold_auc" not in results or "patterns" not in results:
+        raise KeyError("Results dictionary missing required keys: 'fold_auc' or 'patterns'")
     
-    if mean_key not in results or std_key not in results or "evoked_patterns" not in results:
-        raise KeyError(f"Results dictionary missing required keys: {mean_key}, {std_key}, or 'evoked_patterns'")
+    # Extract the AUC values and compute mean/std
+    metric_idx = 0 if metric == "roc" else 1  # 0 for ROC-AUC, 1 for PR-AUC
+    fold_auc = results["fold_auc"]
+    
+    # Check if fold_auc has the expected structure
+    if fold_auc.ndim != 3 or fold_auc.shape[1] != 2:
+        raise ValueError(f"Expected fold_auc shape (n_folds, 2, n_windows), got {fold_auc.shape}")
+        
+    logger.debug(f"Computing {metric} metrics over {fold_auc.shape[0]} folds")
+    
+    # Calculate mean and std across folds
+    mean_perf = np.mean(fold_auc[:, metric_idx, :], axis=0)
+    std_perf = np.std(fold_auc[:, metric_idx, :], axis=0)
     
     # Extract common styling parameters from kwargs
     figsize = kwargs.pop("figsize", (14, 10))
@@ -105,10 +116,8 @@ def plot_classification_results(
     
     ax1, ax2 = axes
     
-    # Get performance metrics and patterns
-    mean_perf = results[mean_key]
-    std_perf = results[std_key]
-    patterns = results['evoked_patterns']
+    # Get patterns
+    patterns = results["patterns"]
     
     # Determine x-axis values
     if time_in_ms:
