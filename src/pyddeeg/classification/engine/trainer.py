@@ -27,13 +27,21 @@ import warnings
 from typing import Any, Dict, Tuple
 
 import numpy as np
+
 import mne
-from mne.decoding import Scaler, Vectorizer, SlidingEstimator, get_coef, cross_val_multiscore
+from mne.decoding import (
+    Scaler,
+    Vectorizer,
+    SlidingEstimator,
+    cross_val_multiscore,
+)
 from mne.stats import permutation_cluster_test
+
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_val_predict
 from sklearn.pipeline import make_pipeline
 
+from pyddeeg.classification.optimizer.OptunaEstimator import OptunaEstimator
 from pyddeeg import RQA_METRICS
 from pyddeeg.classification.dataloaders import EEGDataset
 from pyddeeg.classification import logger
@@ -74,7 +82,9 @@ def _make_epochs(elec: str, X: np.ndarray, sfreq: float) -> mne.EpochsArray:
             "ignore", "Missing channel location", RuntimeWarning, "mne"
         )
         epochs.set_montage("standard_1020", on_missing="ignore")
-    logger.info(f"Epochs shape: {epochs.get_data().shape}")  # Should be (n_subjects, n_metrics, n_windows)
+    logger.info(
+        f"Epochs shape: {epochs.get_data().shape}"
+    )  # Should be (n_subjects, n_metrics, n_windows)
     return epochs
 
 
@@ -82,10 +92,11 @@ def _make_epochs(elec: str, X: np.ndarray, sfreq: float) -> mne.EpochsArray:
 #                           CLASSIFICATION ROUTINE
 # -----------------------------------------------------------------------------
 
+
 def classification_per_electrode(
     elec: str,
     dataset: EEGDataset,
-    model: BaseEstimator,
+    optimizer: OptunaEstimator | BaseEstimator,
     *,
     pos_label: int = 1,
     n_jobs: int | None = -1,
@@ -122,9 +133,9 @@ def classification_per_electrode(
     # 0. Concatenate tensors & build labels
     # ------------------------------------------------------------------
     dd, ct, cv = dataset.dd, dataset.ct, dataset.cv
-    X = np.concatenate([dd, ct])                                 # (N, 15, T)
-    y = np.concatenate([np.ones(len(dd)), np.zeros(len(ct))])    # (N,)
-    groups = np.arange(len(y))                                   # unique ID per subject
+    X = np.concatenate([dd, ct])  # (N, 15, T)
+    y = np.concatenate([np.ones(len(dd)), np.zeros(len(ct))])  # (N,)
+    groups = np.arange(len(y))  # unique ID per subject
 
     # ------------------------------------------------------------------
     # 1. Common preprocessing pipeline (scaling + vectorisation + model)
@@ -133,7 +144,7 @@ def classification_per_electrode(
     base = make_pipeline(
         Scaler(epochs.info, scalings="median"),
         Vectorizer(),
-        model,
+        optimizer,
     )
 
     # ------------------------------------------------------------------
@@ -141,7 +152,6 @@ def classification_per_electrode(
     # ------------------------------------------------------------------
     est_dec = SlidingEstimator(base, scoring=None, n_jobs=n_jobs)
     logger.info(f"== Model Configurations ==")
-    logger.info(f"{model.__class__.__name__} configuration: \n{model.get_params()}")
     logger.info(f"SlidingEstimator configuration: {est_dec}")
     proba = cross_val_predict(
         est_dec,
@@ -152,7 +162,9 @@ def classification_per_electrode(
         method="predict_proba",
         n_jobs=n_jobs,
     )  # → (N, T, 2)
-    logger.info(f"PredProbs shape: {proba.shape}")  # Should be (n_subjects, n_windows, 2)
+    logger.info(
+        f"PredProbs shape: {proba.shape}"
+    )  # Should be (n_subjects, n_windows, 2)
     logger.info("==============================")
     decision_scores = proba[:, :, pos_label]  # (N, T)
 
@@ -167,25 +179,34 @@ def classification_per_electrode(
     auc_pr_folds = cross_val_multiscore(
         est_pr, epochs.get_data(), y, cv=cv, groups=groups, n_jobs=n_jobs
     )  # (n_folds, n_windows)
-    fold_auc = np.stack([auc_roc_folds, auc_pr_folds], axis=1)   # (folds, 2, T)
+    fold_auc = np.stack([auc_roc_folds, auc_pr_folds], axis=1)  # (folds, 2, T)
 
     # ------------------------------------------------------------------
-    # 4. Patterns for interpretability (fit on full data)
+    # 4. Which features got selected in each window?
     # ------------------------------------------------------------------
+    # Fit each window’s OptunaSearchCV (inside SlidingEstimator)
     est_dec.fit(epochs.get_data(), y)
-    patterns = np.squeeze(get_coef(est_dec, "patterns_", inverse_transform=True))
+
+    # For each window, pull out the SelectKBest (or your custom selector) mask:
+    n_windows = epochs.get_data().shape[-1]
+    selected_features = np.zeros((n_windows, len(RQA_METRICS)), dtype=bool)
+    for w, fitted_pipe in enumerate(est_dec.estimators_):  # one pipeline per window
+        opt = fitted_pipe.named_steps["optunaestimator"]  # our custom class
+        mask = opt.pipeline_.named_steps["selector"].get_support()
+        selected_features[w, :] = mask
 
     return {
         "decision_scores": decision_scores,
         "labels": y,
         "fold_auc": fold_auc,
-        "patterns": patterns,
+        "selected_features": selected_features,
     }
 
 
 # -----------------------------------------------------------------------------
 #                            PERMUTATION TEST
 # -----------------------------------------------------------------------------
+
 
 def permutation_test_decision_scores(
     decision_scores: np.ndarray,
