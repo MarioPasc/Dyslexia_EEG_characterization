@@ -13,12 +13,14 @@ missing we fall back to a tiny in‑place monkey‑patch of joblib’s
 from typing import Any, Dict, List
 import warnings
 
+from pathlib import Path
+
 import numpy as np
 from joblib import Parallel, delayed, cpu_count
 from tqdm.auto import tqdm
 
-from pyddeeg.classification.dataloaders import EEGDataset
-from pyddeeg.classification.optimization.optuna_estimator import OptunaEstimator
+from pyddeeg.classification import EEGDataset, OptunaEstimator
+from pyddeeg.classification.optimization import OPTUNA_FALLBACK_PATH
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -31,9 +33,9 @@ def _optuna_for_window(
     dataset: EEGDataset,
     hyperparam_cfg: Dict[str, Dict[str, Any]],
     base_estimator,
-    n_trials: int,
     random_state: int,
     win_idx: int,
+    optuna_configuration: str | Path | Dict[str, Any] | None = OPTUNA_FALLBACK_PATH,
 ) -> Dict[str, Any]:
     """Run Optuna on **one** time‑window and return its ``best_params_`` dict."""
     window_ms = dataset.metadata.get("window_ms", "?")
@@ -43,15 +45,16 @@ def _optuna_for_window(
         base_estimator=base_estimator,
         hyperparameters=hyperparam_cfg,
         dataset=dataset,
-        n_trials=n_trials,
+        config_yaml=optuna_configuration,
         random_state=random_state + win_idx,  # perturb seed per window
         study_name=study_name,
     )
+
     return opt.fit(Xw, y).best_params_
 
 
 # -----------------------------------------------------------------------------
-# Public API – sequential version (unchanged, but with tqdm)
+# Public API – sequential version
 # -----------------------------------------------------------------------------
 
 
@@ -61,7 +64,7 @@ def tune_one_electrode(
     hyperparam_cfg: Dict[str, Dict[str, Any]],
     *,
     base_estimator,
-    n_trials: int = 50,
+    optuna_configuration: str | Path | Dict[str, Any] | None = None,
     random_state: int = 42,
 ) -> List[Dict[str, Any]]:
     """Sequential hyper‑parameter tuning with a simple tqdm progress bar."""
@@ -79,14 +82,14 @@ def tune_one_electrode(
     for w in bar:
         params.append(
             _optuna_for_window(
-                X[..., w],
-                y,
-                dataset,
-                hyperparam_cfg,
-                base_estimator,
-                n_trials,
-                random_state,
-                w,
+                Xw=X[..., w],
+                y=y,
+                dataset=dataset,
+                hyperparam_cfg=hyperparam_cfg,
+                base_estimator=base_estimator,
+                random_state=random_state,
+                win_idx=w,
+                optuna_configuration=optuna_configuration,
             )
         )
     bar.close()
@@ -123,7 +126,7 @@ def tune_one_electrode_parallel(
     hyperparam_cfg: Dict[str, Dict[str, Any]],
     *,
     base_estimator,
-    n_trials: int = 50,
+    optuna_configuration: str | Path | Dict[str, Any] | None = OPTUNA_FALLBACK_PATH,
     random_state: int = 42,
     n_jobs: int | None = None,
 ) -> List[Dict[str, Any]]:
@@ -155,14 +158,14 @@ def tune_one_electrode_parallel(
     with cm:
         results = Parallel(n_jobs=n_jobs, backend="loky", verbose=0)(
             delayed(_optuna_for_window)(
-                X[..., w],
-                y,
-                dataset,
-                hyperparam_cfg,
-                base_estimator,
-                n_trials,
-                random_state,
-                w,
+                Xw=X[..., w],
+                y=y,
+                dataset=dataset,
+                hyperparam_cfg=hyperparam_cfg,
+                base_estimator=base_estimator,
+                random_state=random_state,
+                win_idx=w,
+                optuna_configuration=optuna_configuration,
             )
             for w in range(n_windows)
         )

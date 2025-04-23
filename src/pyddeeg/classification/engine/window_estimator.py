@@ -26,7 +26,13 @@ class WindowParamEstimator(BaseEstimator):
             SelectKBest(f_classif, k=k),
             self.base_cls().set_params(**par),
         )
-        self.fitted_ = pipe.fit(X, y)
+        if hasattr(self.fitted_, "classes_"):
+            self.classes_ = self.fitted_.classes_
+        else:  # should never happen for classifiers
+            raise AttributeError(
+                "Inner model does not expose `classes_` – "
+                "required by cross_val_predict / SlidingEstimator."
+            )
         return self
 
     # These just delegate

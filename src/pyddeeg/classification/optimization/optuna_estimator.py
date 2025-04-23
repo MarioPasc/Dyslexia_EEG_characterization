@@ -12,6 +12,8 @@ nested-CV data leakage.  It is window-agnostic: you still call
 from typing import Any, Dict, Optional, Tuple
 import warnings
 
+from pathlib import Path
+
 import numpy as np
 import optuna
 
@@ -20,8 +22,11 @@ from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import cross_val_score
 
-from pyddeeg.classification.optimization.utils import suggest_from_config
-from pyddeeg.classification.dataloaders import EEGDataset
+from pyddeeg.classification.optimization.utils import (
+    suggest_from_config,
+    load_optuna_config,
+)
+from pyddeeg.classification import EEGDataset
 
 __all__: Tuple[str, ...] = ("OptunaEstimator",)
 
@@ -53,11 +58,28 @@ class OptunaEstimator(BaseEstimator):
         hyperparameters: Dict[str, Dict[str, Any]],
         dataset: EEGDataset,
         *,
-        n_trials: int = 50,
-        random_state: Optional[int] = None,
+        config_yaml: str | Path | Dict[str, Any] | None = None,
+        n_trials: int | None = None,
+        random_state: int | None = None,
         k_range: Tuple[int, int] = (5, 15),
-        study_name: Optional[str] = None,
+        study_name: str | None = None,
     ) -> None:
+
+        # ------------------------------------------------------------------ #
+        # Parse YAML and override defaults                                   #
+        # ------------------------------------------------------------------ #
+        cfg = load_optuna_config(config_yaml or {})  # empty dict if None
+
+        self.n_trials = n_trials or cfg["n_trials"]
+        self.random_state = random_state or cfg["random_state"]
+        self.scoring = cfg["scoring"]
+
+        self._sampler = cfg["sampler_obj"]
+        self._pruner = cfg["pruner_obj"]
+
+        self._storage_dir: Path | None = cfg["storage_dir"]
+        self._single_db: bool = cfg["single_db"]
+
         # --- Basic type safety ------------------------------------------------
         if isinstance(base_estimator, type):
             raise TypeError("base_estimator must be an *instance*, not a class.")
@@ -67,7 +89,6 @@ class OptunaEstimator(BaseEstimator):
         self.base_estimator = base_estimator
         self.hyperparameters = hyperparameters
         self.dataset = dataset
-        self.n_trials = int(n_trials)
         self.random_state = random_state
         self.k_range = k_range
         self.study_name = study_name
@@ -98,23 +119,42 @@ class OptunaEstimator(BaseEstimator):
                 X,
                 y,
                 cv=self.dataset.cv,
-                scoring="roc_auc",
+                scoring=self.scoring,
                 n_jobs=-1,
                 groups=np.arange(len(y)),
             )
             return float(np.mean(scores))
+
+    def _get_storage(self, study_name: str) -> str | None:
+        """
+        Return an sqlite:/// URL or None depending on the YAML `save_trials`
+        section.
+        """
+        if self._storage_dir is None:
+            return None
+
+        self._storage_dir.mkdir(parents=True, exist_ok=True)
+        if self._single_db:
+            db_path = self._storage_dir / "optuna_studies.db"
+        else:
+            db_path = self._storage_dir / f"{study_name}.db"
+        return f"sqlite:///{db_path}"
 
     # ------------------------------------------------------------------
     #                           Public API
     # ------------------------------------------------------------------
     def fit(self, X: np.ndarray, y: np.ndarray):  # noqa: D401
         """Optimise hyper‑parameters on (X, y) and fit final pipeline."""
+
         from pyddeeg.classification import logger
 
-        # Create study with name if provided
+        storage_url = self._get_storage(self.study_name or "study")
+
         study = optuna.create_study(
             direction="maximize",
-            sampler=optuna.samplers.TPESampler(seed=self.random_state),
+            sampler=self._sampler,
+            pruner=self._pruner,
+            storage=storage_url,
             study_name=self.study_name,
         )
 

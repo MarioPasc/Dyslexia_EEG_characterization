@@ -1,0 +1,33 @@
+# ------------------------------------------------------------
+# Global experiment settings
+# ------------------------------------------------------------
+n_trials: 10          # ← how many Optuna trials per window
+random_state: 42       # global seed
+scoring: roc_auc       # any sklearn-compatible scorer string
+
+# ------------------------------------------------------------
+# Sampler configuration
+# (key = Optuna class name, value = its __init__ kwargs)
+# ------------------------------------------------------------
+sampler:
+  TPESampler:
+    n_startup_trials: 15
+    n_ei_candidates: 24
+    multivariate: true
+
+# ------------------------------------------------------------
+# Pruner configuration
+# (same pattern: class name → kwargs dictionary)
+# ------------------------------------------------------------
+pruner:
+  MedianPruner:
+    n_warmup_steps: 10
+    interval_steps: 2
+
+# ------------------------------------------------------------
+# Trial storage (set this block to keep a permanent log)
+# ------------------------------------------------------------
+save_trials:
+  output_dir: ~/optuna_runs/        # directory will be created if absent
+  single_db: true                   # true → one optuna_studies.db
+                                    # false → one <study_name>.db per window
