@@ -32,11 +32,11 @@ def suggest_from_config(
         if t == "loguniform":
             low = float(cfg["min"])
             high = float(cfg["max"])
-            params[name] = trial.suggest_loguniform(name, low, high)
+            params[name] = trial.suggest_float(name, low, high, log=True)
         elif t == "float":
             low = float(cfg["min"])
             high = float(cfg["max"])
-            params[name] = trial.suggest_float(name, low, high)
+            params[name] = trial.suggest_float(name, low, high, log=False)
         elif t == "integer":
             low = int(cfg["min"])
             high = int(cfg["max"])

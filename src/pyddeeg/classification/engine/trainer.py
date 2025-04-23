@@ -40,8 +40,9 @@ from mne.stats import permutation_cluster_test
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_val_predict
 from sklearn.pipeline import make_pipeline
+from sklearn.feature_selection import SelectKBest, f_classif
 
-from pyddeeg.classification.optimizer.OptunaEstimator import OptunaEstimator
+from pyddeeg.classification.optimization.optuna_estimator import OptunaEstimator
 from pyddeeg import RQA_METRICS
 from pyddeeg.classification.dataloaders import EEGDataset
 from pyddeeg.classification import logger
@@ -96,7 +97,7 @@ def _make_epochs(elec: str, X: np.ndarray, sfreq: float) -> mne.EpochsArray:
 def classification_per_electrode(
     elec: str,
     dataset: EEGDataset,
-    optimizer: OptunaEstimator | BaseEstimator,
+    model: BaseEstimator,
     *,
     pos_label: int = 1,
     n_jobs: int | None = -1,
@@ -144,7 +145,7 @@ def classification_per_electrode(
     base = make_pipeline(
         Scaler(epochs.info, scalings="median"),
         Vectorizer(),
-        optimizer,
+        model,
     )
 
     # ------------------------------------------------------------------
@@ -201,6 +202,53 @@ def classification_per_electrode(
         "fold_auc": fold_auc,
         "selected_features": selected_features,
     }
+
+
+def evaluate_with_frozen_params(
+    elec: str,
+    dataset: EEGDataset,
+    base_estimator_cls,  # e.g. LogisticRegression
+    params_per_window: list[dict],
+    *,
+    pos_label: int = 1,
+    n_jobs: int | None = -1,
+):
+    """
+    Runs the outer-CV only – **no tuning** happens here.
+    """
+    # ------------------------------------------------------------------
+    # Build one Pipeline per window, each with its own params dict
+    # ------------------------------------------------------------------
+    estimators = []
+    for par in params_per_window:
+        k = par.pop("k")  # feature count
+        model = base_estimator_cls().set_params(**par)
+
+        pipe = make_pipeline(
+            Scaler(None, scalings="median"),  # Scaler needs real info later
+            Vectorizer(),
+            make_pipeline(  # nested so we can probe later
+                SelectKBest(f_classif, k=k),
+                model,
+            ),
+        )
+        estimators.append(pipe)
+
+    # ------------------------------------------------------------------
+    # Wrap into SlidingEstimator *without* Optuna
+    # ------------------------------------------------------------------
+    from mne.decoding import SlidingEstimator
+
+    fixed_model = SlidingEstimator(estimators, n_jobs=n_jobs)
+
+    # Delegate to your original routine
+    return classification_per_electrode(
+        elec=elec,
+        dataset=dataset,
+        model=fixed_model,
+        pos_label=pos_label,
+        n_jobs=n_jobs,
+    )
 
 
 # -----------------------------------------------------------------------------

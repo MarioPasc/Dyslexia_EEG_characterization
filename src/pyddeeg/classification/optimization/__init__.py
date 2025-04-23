@@ -1,4 +1,3 @@
 # pyddeeg/classification/optimizer/__init__.py
 
-
-from .OptunaEstimator import OptunaEstimator
+from .optuna_estimator import OptunaEstimator
