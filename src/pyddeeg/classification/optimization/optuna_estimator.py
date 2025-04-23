@@ -10,6 +10,7 @@ nested-CV data leakage.  It is window-agnostic: you still call
 """
 
 from typing import Any, Dict, Optional, Tuple
+import warnings
 
 import numpy as np
 import optuna
@@ -42,6 +43,8 @@ class OptunaEstimator(BaseEstimator):
         Seed for reproducibility.
     k_range
         Range for ``SelectKBest(k)``.
+    study_name
+        Optional name for the Optuna study. Useful for logging.
     """
 
     def __init__(
@@ -53,6 +56,7 @@ class OptunaEstimator(BaseEstimator):
         n_trials: int = 50,
         random_state: Optional[int] = None,
         k_range: Tuple[int, int] = (5, 15),
+        study_name: Optional[str] = None,
     ) -> None:
         # --- Basic type safety ------------------------------------------------
         if isinstance(base_estimator, type):
@@ -66,40 +70,67 @@ class OptunaEstimator(BaseEstimator):
         self.n_trials = int(n_trials)
         self.random_state = random_state
         self.k_range = k_range
+        self.study_name = study_name
 
     # ---------------------------------------------------------------------
     #                   Optuna objective & helper methods
     # ---------------------------------------------------------------------
     def _objective(self, trial: optuna.Trial, X: np.ndarray, y: np.ndarray) -> float:
         """A single Optuna trial."""
-        params = suggest_from_config(trial, self.hyperparameters)
-        k = trial.suggest_int("k", self.k_range[0], self.k_range[1])
+        # Suppress specific warnings within objective function
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Features .* are constant")
+            warnings.filterwarnings(
+                "ignore",
+                category=RuntimeWarning,
+                message="invalid value encountered in divide",
+            )
 
-        selector = SelectKBest(f_classif, k=k)
-        model = clone(self.base_estimator).set_params(**params)
-        pipeline = Pipeline([("selector", selector), ("model", model)])
+            params = suggest_from_config(trial, self.hyperparameters)
+            k = trial.suggest_int("k", self.k_range[0], self.k_range[1])
 
-        scores = cross_val_score(
-            pipeline,
-            X,
-            y,
-            cv=self.dataset.cv,
-            scoring="roc_auc",
-            n_jobs=-1,
-            groups=np.arange(len(y)),
-        )
-        return float(np.mean(scores))
+            selector = SelectKBest(f_classif, k=k)
+            model = clone(self.base_estimator).set_params(**params)
+            pipeline = Pipeline([("selector", selector), ("model", model)])
+
+            scores = cross_val_score(
+                pipeline,
+                X,
+                y,
+                cv=self.dataset.cv,
+                scoring="roc_auc",
+                n_jobs=-1,
+                groups=np.arange(len(y)),
+            )
+            return float(np.mean(scores))
 
     # ------------------------------------------------------------------
     #                           Public API
     # ------------------------------------------------------------------
     def fit(self, X: np.ndarray, y: np.ndarray):  # noqa: D401
         """Optimise hyper‑parameters on (X, y) and fit final pipeline."""
+        from pyddeeg.classification import logger
+
+        # Create study with name if provided
         study = optuna.create_study(
             direction="maximize",
             sampler=optuna.samplers.TPESampler(seed=self.random_state),
+            study_name=self.study_name,
         )
-        study.optimize(lambda t: self._objective(t, X, y), n_trials=self.n_trials)
+
+        if self.study_name:
+            logger.info(f"Starting optimization for study: {self.study_name}")
+
+        # Suppress warnings during optimization
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Features .* are constant")
+            warnings.filterwarnings(
+                "ignore",
+                category=RuntimeWarning,
+                message="invalid value encountered in divide",
+            )
+
+            study.optimize(lambda t: self._objective(t, X, y), n_trials=self.n_trials)
 
         best = study.best_params.copy()
         k = best.pop("k")
@@ -110,6 +141,12 @@ class OptunaEstimator(BaseEstimator):
 
         self.best_params_ = {"k": k, **best}
         self.study_ = study
+
+        if self.study_name:
+            logger.info(
+                f"Completed optimization for {self.study_name}. Best score: {study.best_value:.4f}"
+            )
+
         return self
 
     # scikit‑learn delegation wrappers
