@@ -17,6 +17,11 @@ from pathlib import Path
 import numpy as np
 import optuna
 
+from contextlib import suppress
+from filelock import FileLock
+import sqlite3
+from sqlalchemy import create_engine
+
 from sklearn.base import BaseEstimator, clone
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.pipeline import Pipeline
@@ -137,36 +142,30 @@ class OptunaEstimator(BaseEstimator):
 
     def _get_storage(self, study_name: str) -> str | None:
         """
-        Return an sqlite:/// URL or None depending on the YAML `save_trials`
-        section.
+        Build an sqlite:/// URL *and* make sure the schema exists exactly once,
+        even when hundreds of processes start at the same time.
         """
         if self._storage_dir is None:
             return None
 
         self._storage_dir.mkdir(parents=True, exist_ok=True)
-        if self._single_db:
-            db_path = self._storage_dir / "optuna_studies.db"
-        else:
-            db_path = self._storage_dir / f"{study_name}.db"
-        # ------------------------------------------------------------------
-        # Ensure the schema is created exactly once to avoid a race-condition
-        # when many worker-processes hit the DB at the same instant.
-        # ------------------------------------------------------------------
-        import threading, sqlite3
-
-        _lock = threading.Lock()
+        db_path = self._storage_dir / (
+            "optuna_studies.db" if self._single_db else f"{study_name}.db"
+        )
         url = f"sqlite:///{db_path}"
-        with _lock:
-            if not db_path.exists() or db_path.stat().st_size == 0:
-                from sqlalchemy import create_engine
-                from optuna.storages._rdb.models import BaseModel
 
-                engine = create_engine(url, connect_args={"check_same_thread": False})
-                try:
-                    BaseModel.metadata.create_all(engine)  # idempotent
-                except sqlite3.OperationalError:
-                    # Another process created it a split-second earlier – fine.
-                    pass
+        # ---------- inter-process lock -----------------------------------------
+        lockfile = db_path.with_suffix(".lock")
+        with FileLock(lockfile, timeout=300):  # 5-min safety timeout
+            if not db_path.exists() or db_path.stat().st_size == 0:
+                eng = create_engine(
+                    url,
+                    connect_args={"check_same_thread": False, "timeout": 60},
+                )
+                # "IF NOT EXISTS" isn’t emitted by SQLAlchemy, so we still need
+                # to swallow the race between 2 very unlucky processes.
+                with suppress(sqlite3.OperationalError):
+                    BaseModel.metadata.create_all(eng)
 
         return url
 
