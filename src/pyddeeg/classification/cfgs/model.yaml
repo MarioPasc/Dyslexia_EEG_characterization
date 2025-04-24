@@ -1,0 +1,9 @@
+# Base estimator – dotted import path resolved via importlib
+base_estimator: sklearn.ensemble.HistGradientBoostingClassifier
+
+# Hyper-parameter search space 
+hyperparameters:
+  learning_rate:     {min: 1e-3, max: 1e-1, type: float}
+  max_depth:         {min: 2,    max: 6,    type: integer}
+  max_iter:          {min: 100,  max: 1000, type: integer}
+  l2_regularization: {min: 1e-4, max: 1.0,  type: loguniform}

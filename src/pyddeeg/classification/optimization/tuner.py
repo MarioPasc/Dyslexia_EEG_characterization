@@ -36,6 +36,7 @@ def _optuna_for_window(
     random_state: int,
     win_idx: int,
     optuna_configuration: str | Path | Dict[str, Any] | None = OPTUNA_FALLBACK_PATH,
+    storage_dir: str | Path | None = None,
 ) -> Dict[str, Any]:
     """Run Optuna on **one** time‑window and return its ``best_params_`` dict."""
     window_ms = dataset.metadata.get("window_ms", "?")
@@ -47,6 +48,7 @@ def _optuna_for_window(
         dataset=dataset,
         config_yaml=optuna_configuration,
         random_state=random_state + win_idx,  # perturb seed per window
+        storage_dir=storage_dir,
         study_name=study_name,
     )
 
@@ -66,6 +68,7 @@ def tune_one_electrode(
     base_estimator,
     optuna_configuration: str | Path | Dict[str, Any] | None = None,
     random_state: int = 42,
+    storage_dir: str | Path | None = None,
 ) -> List[Dict[str, Any]]:
     """Sequential hyper‑parameter tuning with a simple tqdm progress bar."""
     warnings.filterwarnings("ignore", message="Features .* are constant")
@@ -89,6 +92,7 @@ def tune_one_electrode(
                 base_estimator=base_estimator,
                 random_state=random_state,
                 win_idx=w,
+                storage_dir=storage_dir,
                 optuna_configuration=optuna_configuration,
             )
         )
@@ -128,6 +132,7 @@ def tune_one_electrode_parallel(
     base_estimator,
     optuna_configuration: str | Path | Dict[str, Any] | None = OPTUNA_FALLBACK_PATH,
     random_state: int = 42,
+    storage_dir: str | Path | None = None,
     n_jobs: int | None = None,
 ) -> List[Dict[str, Any]]:
     """Parallel window‑wise Optuna with a live tqdm progress bar."""
@@ -165,6 +170,7 @@ def tune_one_electrode_parallel(
                 base_estimator=base_estimator,
                 random_state=random_state,
                 win_idx=w,
+                storage_dir=storage_dir,
                 optuna_configuration=optuna_configuration,
             )
             for w in range(n_windows)

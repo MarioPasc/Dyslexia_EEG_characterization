@@ -1,259 +1,210 @@
 # -*- coding: utf-8 -*-
-"""trainer.py
-================
-Low-level helpers for sliding-window classification of EEG-derived RQA
-features and permutation statistics.
-
-The main routine now exposes **raw per-fold, per-window AUC curves** so that
-power-users can apply their own aggregation or statistical workflow.
-
-Key public functions
---------------------
-* :func:`classification_per_electrode` - returns
-    * per-subject decision-score matrix *(subjects x windows)*
-    * **per-fold AUC tensor** ``(n_folds, 2, n_windows)`` where the
-      second dimension encodes ROC-AUC (index 0) and PR-AUC (index 1)
-    * forward-model patterns *(windows x metrics)*
-    * subject labels
-* :func:`permutation_test_decision_scores` - cluster-based non-parametric
-  comparison (DD vs CT) on the decision-score matrix.
-
-Both functions are fully type-hinted and include extensive doctrings so
-that they can double as user-level documentation.
+"""
+trainer.py – re-train & re-evaluate tuned window-wise models
+============================================================
+* Accepts **one electrode**, its dataset and **one model-spec per window**.
+* Wraps them in an MNE ``SlidingEstimator`` so that **exactly the same
+  outer StratifiedGroupKFold** (stored in ``dataset.cv``) is used for
+  evaluation – **no data leakage**.
+* Returns everything you will likely want for downstream analysis
+  (decision scores, per-fold AUC curves, feature masks, CV splits, …)
+  in a single dict that can safely be written with
+  ``np.savez_compressed(out_file, **results)``.
 """
 from __future__ import annotations
 
+from typing import Any, Dict, List, Tuple
+
 import warnings
-from typing import Any, Dict, Tuple
 
 import numpy as np
-
 import mne
-from mne.decoding import (
-    Scaler,
-    Vectorizer,
-    SlidingEstimator,
-    cross_val_multiscore,
-)
+from mne.decoding import Scaler, Vectorizer, SlidingEstimator, cross_val_multiscore
 from mne.stats import permutation_cluster_test
+from sklearn.model_selection import GroupKFold, cross_val_predict
+from sklearn.pipeline import Pipeline, make_pipeline
 
-from sklearn.base import BaseEstimator
-from sklearn.model_selection import cross_val_predict
-from sklearn.pipeline import make_pipeline
-from sklearn.feature_selection import SelectKBest, f_classif
-
-from pyddeeg.classification.optimization.optuna_estimator import OptunaEstimator
 from pyddeeg import RQA_METRICS
 from pyddeeg.classification.dataloaders import EEGDataset
-from pyddeeg.classification import logger
+from pyddeeg.classification import WindowParamEstimator
 
 __all__: Tuple[str, ...] = (
-    "classification_per_electrode",
+    "build_sliding_estimator",
+    "evaluate_frozen_models",
     "permutation_test_decision_scores",
 )
 
+# -----------------------------------------------------------------------------#
+#                                helpers                                        #
+# -----------------------------------------------------------------------------#
+
 
 def _make_epochs(elec: str, X: np.ndarray, sfreq: float) -> mne.EpochsArray:
-    """Construct an :class:`~mne.EpochsArray` from the RQA feature matrix.
-
-    Parameters
-    ----------
-    elec
-        Electrode code (e.g. ``"Fz"``).
-    X
-        Feature tensor with shape ``(n_subjects, n_metrics, n_windows)``.
-    sfreq
-        Sampling frequency that links the window index to real time
-        (usually ``20.`` Hz when windows are 50 ms apart).
-
-    Returns
-    -------
-    epochs
-        Single-epoch MNE container whose *channels* correspond to the
-        15 RQA metrics.
-    """
+    """Convert (subjects × metrics × windows) tensor into a single‐epoch MNE object."""
     info = mne.create_info(
-        ch_names=[f"{elec}_{m}" for m in RQA_METRICS],
-        sfreq=sfreq,
-        ch_types="eeg",
+        [f"{elec}_{m}" for m in RQA_METRICS], sfreq=sfreq, ch_types="eeg"
     )
-    epochs = mne.EpochsArray(X, info, tmin=0.0)
     with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", "Missing channel location", RuntimeWarning, "mne"
-        )
+        warnings.filterwarnings("ignore", category=RuntimeWarning, message="Missing")
+        epochs = mne.EpochsArray(X, info, tmin=0.0)
         epochs.set_montage("standard_1020", on_missing="ignore")
-    logger.info(
-        f"Epochs shape: {epochs.get_data().shape}"
-    )  # Should be (n_subjects, n_metrics, n_windows)
     return epochs
 
 
-# -----------------------------------------------------------------------------
-#                           CLASSIFICATION ROUTINE
-# -----------------------------------------------------------------------------
+def _make_selector_mask(pipe: Pipeline) -> np.ndarray:
+    """Return boolean mask of selected features for *one* window pipeline."""
+    # 1) OptunaEstimator case (tuning stage)
+    if hasattr(pipe, "named_steps") and "optunaestimator" in pipe.named_steps:
+        sel = pipe.named_steps["optunaestimator"].pipeline_.named_steps["selector"]
+        return sel.get_support()
+
+    # 2) WindowParamEstimator → look inside .fitted_
+    if hasattr(pipe, "fitted_"):
+        return pipe.fitted_.named_steps["selector"].get_support()
+
+    # 3) Any plain sklearn Pipeline passed directly
+    if hasattr(pipe, "named_steps"):
+        for step in pipe.named_steps.values():
+            if hasattr(step, "get_support"):
+                return step.get_support()
+
+    raise RuntimeError("No selector with get_support() found in window pipeline.")
 
 
-def classification_per_electrode(
-    elec: str,
-    dataset: EEGDataset,
-    model: BaseEstimator,
+# -----------------------------------------------------------------------------#
+#                          model construction                                   #
+# -----------------------------------------------------------------------------#
+
+
+def build_sliding_estimator(
     *,
-    pos_label: int = 1,
-    n_jobs: int | None = -1,
-) -> Dict[str, Any]:
-    """Run a *window-wise* classifier on one electrode and expose raw AUC.
-
-    The procedure fits **one classifier per time window** using
-    :class:`mne.decoding.SlidingEstimator`. Two separate SlidingEstimators
-    are created - one scored with ``roc_auc`` and another with
-    ``average_precision`` - so we recover **fold-level** ROC-AUC and PR-AUC
-    matrices.  These are stacked into a tensor ``(n_folds, 2, n_windows)``
-    for maximum downstream flexibility.
+    params_per_window: List[Dict[str, Any]],
+    base_estimator_cls,
+) -> SlidingEstimator:
+    """
+    Build a **fresh** SlidingEstimator that will (re-)train one model per window
+    with *exactly* the supplied hyper-parameters.
 
     Parameters
     ----------
-    elec, dataset, model, pos_label, n_jobs
-        See full doc-string in previous revision; semantics unchanged.
+    params_per_window
+        List with length == n_windows. Each dict **must** contain the key ``"k"``
+        (number of RQA metrics to keep) plus any hyper-params of *base_estimator*.
+    base_estimator_cls
+        Estimator **class** (e.g. ``HistGradientBoostingClassifier``). Will be
+        instantiated once per window.
+
+    Returns
+    -------
+    se : SlidingEstimator (un-fitted)
+    """
+    return SlidingEstimator(
+        WindowParamEstimator(
+            base_cls=base_estimator_cls, params_per_window=params_per_window
+        ),
+        n_jobs=-1,
+    )
+
+
+# -----------------------------------------------------------------------------#
+#                          main evaluation routine                              #
+# -----------------------------------------------------------------------------#
+
+
+def evaluate_frozen_models(
+    *,
+    elec: str,
+    dataset: EEGDataset,
+    params_per_window: List[Dict[str, Any]],
+    base_estimator_cls,
+    pos_label: int = 1,
+    n_jobs: int = -1,
+) -> Dict[str, Any]:
+    """
+    Re-train the tuned models on the outer CV and gather all evaluation metrics.
 
     Returns
     -------
     results : dict
-        Keys and shapes::
-
-            {
-              'decision_scores' : (n_subjects, n_windows),
-              'labels'          : (n_subjects,),
-              'fold_auc'        : (n_folds, 2, n_windows),
-              'patterns'        : (n_windows, n_metrics)
-            }
-
-        ``fold_auc[:, 0, :]`` → ROC-AUC; ``fold_auc[:, 1, :]`` → PR-AUC.
+        {
+          "decision_scores"   : ndarray (subjects × windows),
+          "labels"            : ndarray (subjects,),
+          "fold_auc"          : ndarray (n_folds × 2 × windows),
+          "selected_features" : ndarray (windows × 15 RQA metrics),
+          "params_per_window" : list[dict],
+          "cv_indices"        : list[tuple[np.ndarray, np.ndarray]],
+          "t_centres_ms"      : ndarray | None
+        }
     """
-    # ------------------------------------------------------------------
-    # 0. Concatenate tensors & build labels
-    # ------------------------------------------------------------------
-    dd, ct, cv = dataset.dd, dataset.ct, dataset.cv
-    X = np.concatenate([dd, ct])  # (N, 15, T)
-    y = np.concatenate([np.ones(len(dd)), np.zeros(len(ct))])  # (N,)
-    groups = np.arange(len(y))  # unique ID per subject
+    # ----------------------------- data ----------------------------------- #
+    X = np.concatenate([dataset.dd, dataset.ct])  # shape  (N, 15, T)
+    y = np.concatenate([np.ones(len(dataset.dd)), np.zeros(len(dataset.ct))])
+    groups = np.arange(len(y))  # one id per subject
+    cv: GroupKFold = dataset.cv  # already stratified
+    cv_indices = [(tr, te) for tr, te in cv.split(X, y, groups=groups)]
 
-    # ------------------------------------------------------------------
-    # 1. Common preprocessing pipeline (scaling + vectorisation + model)
-    # ------------------------------------------------------------------
-    epochs = _make_epochs(elec, X, sfreq=float(dataset.metadata.get("sfreq", 1.0)))
-    base = make_pipeline(
-        Scaler(epochs.info, scalings="median"),
-        Vectorizer(),
-        model,
+    epochs = _make_epochs(
+        dataset.metadata["elec"], X, sfreq=float(dataset.metadata["sfreq"])
     )
 
-    # ------------------------------------------------------------------
-    # 2. Fold-wise decision scores (per subject) for advanced stats
-    # ------------------------------------------------------------------
-    est_dec = SlidingEstimator(base, scoring=None, n_jobs=n_jobs)
-    logger.info(f"== Model Configurations ==")
-    logger.info(f"SlidingEstimator configuration: {est_dec}")
+    # ----------------------------- model ---------------------------------- #
+    scaler = Scaler(epochs.info, scalings="median")
+    vectorizer = Vectorizer()
+    se = build_sliding_estimator(
+        params_per_window=params_per_window, base_estimator_cls=base_estimator_cls
+    )
+
+    base_pipeline = make_pipeline(scaler, vectorizer, se)
+
+    # ----------------------------- prediction ----------------------------- #
     proba = cross_val_predict(
-        est_dec,
+        base_pipeline,
         X=epochs.get_data(),
         y=y,
-        cv=cv,
+        cv=cv_indices,
         groups=groups,
         method="predict_proba",
         n_jobs=n_jobs,
-    )  # → (N, T, 2)
-    logger.info(
-        f"PredProbs shape: {proba.shape}"
-    )  # Should be (n_subjects, n_windows, 2)
-    logger.info("==============================")
-    decision_scores = proba[:, :, pos_label]  # (N, T)
+    )  # (N, T, 2)
+    decision_scores = proba[:, :, pos_label]
 
-    # ------------------------------------------------------------------
-    # 3. Fold-level AUC tensors (ROC and PR)
-    # ------------------------------------------------------------------
-    est_roc = SlidingEstimator(base, scoring="roc_auc", n_jobs=n_jobs)
-    est_pr = SlidingEstimator(base, scoring="average_precision", n_jobs=n_jobs)
-    auc_roc_folds = cross_val_multiscore(
-        est_roc, epochs.get_data(), y, cv=cv, groups=groups, n_jobs=n_jobs
-    )  # (n_folds, n_windows)
-    auc_pr_folds = cross_val_multiscore(
-        est_pr, epochs.get_data(), y, cv=cv, groups=groups, n_jobs=n_jobs
-    )  # (n_folds, n_windows)
-    fold_auc = np.stack([auc_roc_folds, auc_pr_folds], axis=1)  # (folds, 2, T)
+    # ----------------------------- AUC curves ----------------------------- #
+    roc_se = SlidingEstimator(base_pipeline, scoring="roc_auc", n_jobs=n_jobs)
+    pr_se = SlidingEstimator(base_pipeline, scoring="average_precision", n_jobs=n_jobs)
 
-    # ------------------------------------------------------------------
-    # 4. Which features got selected in each window?
-    # ------------------------------------------------------------------
-    # Fit each window’s OptunaSearchCV (inside SlidingEstimator)
-    est_dec.fit(epochs.get_data(), y)
+    auc_roc = cross_val_multiscore(
+        roc_se, epochs.get_data(), y, cv=cv_indices, n_jobs=n_jobs
+    )
+    auc_pr = cross_val_multiscore(
+        pr_se, epochs.get_data(), y, cv=cv_indices, n_jobs=n_jobs
+    )
+    fold_auc = np.stack([auc_roc, auc_pr], axis=1)  # (folds, 2, T)
 
-    # For each window, pull out the SelectKBest (or your custom selector) mask:
-    n_windows = epochs.get_data().shape[-1]
-    selected_features = np.zeros((n_windows, len(RQA_METRICS)), dtype=bool)
-    for w, fitted_pipe in enumerate(est_dec.estimators_):  # one pipeline per window
-        opt = fitted_pipe.named_steps["optunaestimator"]  # our custom class
-        mask = opt.pipeline_.named_steps["selector"].get_support()
-        selected_features[w, :] = mask
+    # ----------------------------- feature masks -------------------------- #
+    # Fit once so we can dig into each window pipeline
+    base_pipeline.fit(epochs.get_data(), y)
+    selected_features = np.vstack(
+        [
+            _make_selector_mask(pipe)
+            for pipe in base_pipeline.named_steps["slidingestimator"].estimators_
+        ]
+    )
 
+    # ----------------------------- bundle --------------------------------- #
     return {
         "decision_scores": decision_scores,
         "labels": y,
         "fold_auc": fold_auc,
         "selected_features": selected_features,
+        "params_per_window": params_per_window,
+        "cv_indices": cv_indices,
+        "t_centres_ms": dataset.metadata.get("t_centres_ms"),
     }
 
 
-def evaluate_with_frozen_params(
-    elec: str,
-    dataset: EEGDataset,
-    base_estimator_cls,  # e.g. LogisticRegression
-    params_per_window: list[dict],
-    *,
-    pos_label: int = 1,
-    n_jobs: int | None = -1,
-):
-    """
-    Runs the outer-CV only – **no tuning** happens here.
-    """
-    # ------------------------------------------------------------------
-    # Build one Pipeline per window, each with its own params dict
-    # ------------------------------------------------------------------
-    estimators = []
-    for par in params_per_window:
-        k = par.pop("k")  # feature count
-        model = base_estimator_cls().set_params(**par)
-
-        pipe = make_pipeline(
-            Scaler(None, scalings="median"),  # Scaler needs real info later
-            Vectorizer(),
-            make_pipeline(  # nested so we can probe later
-                SelectKBest(f_classif, k=k),
-                model,
-            ),
-        )
-        estimators.append(pipe)
-
-    # ------------------------------------------------------------------
-    # Wrap into SlidingEstimator *without* Optuna
-    # ------------------------------------------------------------------
-    from mne.decoding import SlidingEstimator
-
-    fixed_model = SlidingEstimator(estimators, n_jobs=n_jobs)
-
-    # Delegate to your original routine
-    return classification_per_electrode(
-        elec=elec,
-        dataset=dataset,
-        model=fixed_model,
-        pos_label=pos_label,
-        n_jobs=n_jobs,
-    )
-
-
-# -----------------------------------------------------------------------------
-#                            PERMUTATION TEST
-# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------#
+#                       cluster-based permutation test                          #
+# -----------------------------------------------------------------------------#
 
 
 def permutation_test_decision_scores(
@@ -262,78 +213,38 @@ def permutation_test_decision_scores(
     *,
     n_permutations: int = 5000,
     tail: int = 1,
-    threshold: float | dict | None = None,
-    adjacency: np.ndarray | None = None,
     seed: int | None = None,
+    **mne_kwargs,
 ) -> Dict[str, Any]:
-    """Cluster-based permutation test on DD vs CT decision-score curves.
+    """
+    Run Maris-Oostenveld cluster permutation on the ROC-AUC curves.
 
     Parameters
     ----------
-    decision_scores
-        Matrix with shape ``(n_subjects, n_windows)`` returned by
-        :func:`compute_decision_scores_per_electrode`.
-    labels
-        Binary vector (``1`` = DD, ``0`` = CT) of length ``n_subjects``.
-    n_permutations
-        Number of label permutations used to build the null distribution
-        (defaults to ``5000`` as recommended by Maris & Oostenveld, 2007).
-    tail
-        * ``1`` - test whether DD > CT.
-        * ``0`` - two-sided.
-        * ``-1`` - test whether DD < CT.
-    threshold
-        Cluster-forming threshold (e.g. ``dict(start=0.0, step=0.2)``) or
-        a fixed float.  ``None`` lets MNE choose a default t-distribution
-        threshold based on the sample size.
-    adjacency
-        Optional boolean adjacency matrix if you wish to use
-        spatio-temporal clustering.  Pass ``None`` for purely temporal
-        clustering.
-    seed
-        Seed for the permutation RNG to ensure reproducibility.
+    decision_scores : ndarray (subjects × windows)
+    labels          : ndarray (subjects,)
+    tail            : 1 (DD>CT), 0 (two-sided) or -1 (DD<CT)
+    **mne_kwargs    : forwarded to ``mne.stats.permutation_cluster_test``
 
     Returns
     -------
-    stats
-        Dictionary with the keys::
-
-            {
-                'T_obs'    : ndarray (n_windows,),
-                'clusters' : list[ndarray],
-                'p_values' : ndarray (n_clusters,),
-                'H0'       : ndarray (n_permutations,)
-            }
-
-        See the documentation of
-        :func:`mne.stats.permutation_cluster_test` for details.
+    dict with keys ``T_obs, clusters, p_values, H0``.
     """
-    rng = np.random.default_rng(seed)
+    dd = decision_scores[labels == 1]
+    ct = decision_scores[labels == 0]
 
-    dd_scores = decision_scores[labels == 1]
-    ct_scores = decision_scores[labels == 0]
-
-    if dd_scores.size == 0 or ct_scores.size == 0:
-        raise ValueError("Both classes must contain at least one subject.")
+    if dd.size == 0 or ct.size == 0:
+        raise ValueError("Each class must contain at least one subject.")
 
     with warnings.catch_warnings():
-        # MNE may emit a warning when no clusters are found; silence it so
-        # users can decide based on the return values.
-        warnings.simplefilter("ignore", category=RuntimeWarning)
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
         T_obs, clusters, pvals, H0 = permutation_cluster_test(
-            [dd_scores, ct_scores],
-            adjacency=adjacency,
-            n_permutations=n_permutations,
+            [dd, ct],
             tail=tail,
-            threshold=threshold,
+            n_permutations=n_permutations,
             n_jobs=1,
-            out_type="mask",
-            seed=rng,
+            seed=seed,
+            **mne_kwargs,
         )
 
-    return {
-        "T_obs": T_obs,
-        "clusters": clusters,
-        "p_values": pvals,
-        "H0": H0,
-    }
+    return {"T_obs": T_obs, "clusters": clusters, "p_values": pvals, "H0": H0}

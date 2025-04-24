@@ -59,6 +59,7 @@ class OptunaEstimator(BaseEstimator):
         dataset: EEGDataset,
         *,
         config_yaml: str | Path | Dict[str, Any] | None = None,
+        storage_dir: str | Path | None = None,
         n_trials: int | None = None,
         random_state: int | None = None,
         k_range: Tuple[int, int] = (5, 15),
@@ -77,7 +78,10 @@ class OptunaEstimator(BaseEstimator):
         self._sampler = cfg["sampler_obj"]
         self._pruner = cfg["pruner_obj"]
 
-        self._storage_dir: Path | None = cfg["storage_dir"]
+        yaml_storage = cfg["storage_dir"]
+        self._storage_dir: Path | None = (
+            Path(storage_dir).expanduser() if storage_dir else yaml_storage
+        )
         self._single_db: bool = cfg["single_db"]
 
         # --- Basic type safety ------------------------------------------------
@@ -123,6 +127,12 @@ class OptunaEstimator(BaseEstimator):
                 n_jobs=-1,
                 groups=np.arange(len(y)),
             )
+
+            trial.set_user_attr("cv_scores", scores.tolist())
+            trial.set_user_attr("mean", float(np.mean(scores)))
+            trial.set_user_attr("median", float(np.median(scores)))
+            trial.set_user_attr("std", float(np.std(scores)))
+
             return float(np.mean(scores))
 
     def _get_storage(self, study_name: str) -> str | None:
@@ -146,7 +156,7 @@ class OptunaEstimator(BaseEstimator):
     def fit(self, X: np.ndarray, y: np.ndarray):  # noqa: D401
         """Optimise hyper‑parameters on (X, y) and fit final pipeline."""
 
-        from pyddeeg.classification import logger
+        from pyddeeg.classification import optuna_logger as logger
 
         storage_url = self._get_storage(self.study_name or "study")
 
@@ -181,6 +191,13 @@ class OptunaEstimator(BaseEstimator):
 
         self.best_params_ = {"k": k, **best}
         self.study_ = study
+        bt = study.best_trial.user_attrs
+        self.best_trial_performance = {
+            "mean": bt["mean"],
+            "median": bt["median"],
+            "std": bt["std"],
+            "folds": bt["cv_scores"],
+        }
 
         if self.study_name:
             logger.info(

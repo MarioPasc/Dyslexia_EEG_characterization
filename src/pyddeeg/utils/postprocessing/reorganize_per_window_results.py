@@ -174,7 +174,7 @@ def build_dataset_index(electrode_indexed_dir, output_file=None):
     return dataset
 
 
-def main(root_dir=None, raw_dir=None, output_dir=None):
+def reorganization_pipeline(raw_dir=None, output_dir=None):
     """
     Main function that orchestrates the data reorganization process.
 
@@ -187,15 +187,15 @@ def main(root_dir=None, raw_dir=None, output_dir=None):
     output_dir : str, optional
         Directory for output
     """
-    # Set default paths if not provided
-    if root_dir is None:
-        root_dir = "/home/mario/Python/Datasets/EEG/timeseries/processed/rqa_windows/"
-
-    if raw_dir is None:
-        raw_dir = os.path.join(root_dir, "raw")
-
-    if output_dir is None:
-        output_dir = os.path.join(root_dir, "dataset")
+    # Check if paths exist
+    if not os.path.exists(raw_dir):
+        raise FileNotFoundError(f"Raw data directory {raw_dir} does not exist.")
+    if not os.path.exists(output_dir):
+        raise FileNotFoundError(f"Output directory {output_dir} does not exist.")
+    if not os.path.isdir(raw_dir):
+        raise NotADirectoryError(f"{raw_dir} is not a directory.")
+    if not os.path.isdir(output_dir):
+        raise NotADirectoryError(f"{output_dir} is not a directory.")
 
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -214,14 +214,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Reorganize EEG RQA data by window size."
     )
-    parser.add_argument(
-        "--root-dir",
-        default="/home/mariopasc/Python/Datasets/EEG/timeseries/processed/rqa_windows/",
-        help="Root directory for all data",
-    )
     parser.add_argument("--raw-dir", help="Directory containing raw data")
     parser.add_argument("--output-dir", help="Directory for output")
 
     args = parser.parse_args()
 
-    main(root_dir=args.root_dir, raw_dir=args.raw_dir, output_dir=args.output_dir)
+    reorganization_pipeline(raw_dir=args.raw_dir, output_dir=args.output_dir)

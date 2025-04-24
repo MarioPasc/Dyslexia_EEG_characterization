@@ -1,0 +1,20 @@
+# General experiment parameters (same for every array task)
+dataset_root: /mnt/home/users/tic_163_uma/mpascual/execs/WINDOW_CLASSIFICATION/dataset
+window:       window_200
+direction:    up
+seed:         42
+# If you dont have alredy executed the reorganization of folders
+# after the RQA experiment, set this entry to the folder of the
+# raw data results. The dataset will be generated in dataset_root
+raw_data_results: /mnt/home/users/tic_163_uma/mpascual/fscratch/datasets/EEG/raw
+
+# Where *all* electrodes should store their artefacts
+output_dir:   /scratch/outputs/EEG_RQA_runs
+
+# Paths to the other YAML files
+model_cfg:    model.yaml        # relative paths are fine
+optuna_cfg:   optuna.yaml
+
+# Optional: override number of cores
+tuning_jobs:  16                # None → use joblib default
+cv_jobs:      -1                # -1 → all cores visible to job
