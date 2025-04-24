@@ -148,7 +148,27 @@ class OptunaEstimator(BaseEstimator):
             db_path = self._storage_dir / "optuna_studies.db"
         else:
             db_path = self._storage_dir / f"{study_name}.db"
-        return f"sqlite:///{db_path}"
+        # ------------------------------------------------------------------
+        # Ensure the schema is created exactly once to avoid a race-condition
+        # when many worker-processes hit the DB at the same instant.
+        # ------------------------------------------------------------------
+        import threading, sqlite3
+
+        _lock = threading.Lock()
+        url = f"sqlite:///{db_path}"
+        with _lock:
+            if not db_path.exists() or db_path.stat().st_size == 0:
+                from sqlalchemy import create_engine
+                from optuna.storages._rdb.models import BaseModel
+
+                engine = create_engine(url, connect_args={"check_same_thread": False})
+                try:
+                    BaseModel.metadata.create_all(engine)  # idempotent
+                except sqlite3.OperationalError:
+                    # Another process created it a split-second earlier – fine.
+                    pass
+
+        return url
 
     # ------------------------------------------------------------------
     #                           Public API
