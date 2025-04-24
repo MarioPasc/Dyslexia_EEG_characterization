@@ -133,7 +133,7 @@ def main() -> None:  # pragma: no cover
         )
 
         raw_dir = cfg["raw_data_results"]
-        if not raw_dir.exists():
+        if not os.path.exists(raw_dir):
             raise FileNotFoundError(
                 f"Raw data folder not found at {ds_root / 'raw'} after reorganization."
             )
