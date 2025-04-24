@@ -21,6 +21,7 @@ from contextlib import suppress
 from filelock import FileLock
 import sqlite3
 from sqlalchemy import create_engine
+from optuna.storages._rdb.models import BaseModel
 
 from sklearn.base import BaseEstimator, clone
 from sklearn.feature_selection import SelectKBest, f_classif
