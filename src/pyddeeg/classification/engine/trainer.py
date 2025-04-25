@@ -143,9 +143,7 @@ def evaluate_frozen_models(
     cv: GroupKFold = dataset.cv  # already stratified
     cv_indices = [(tr, te) for tr, te in cv.split(X, y, groups=groups)]
 
-    epochs = _make_epochs(
-        dataset.metadata["elec"], X, sfreq=float(dataset.metadata["sfreq"])
-    )
+    epochs = _make_epochs(elec=elec, X=X, sfreq=1)
 
     # ----------------------------- model ---------------------------------- #
     scaler = Scaler(epochs.info, scalings="median")
