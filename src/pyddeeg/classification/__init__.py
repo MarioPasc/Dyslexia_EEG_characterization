@@ -2,7 +2,7 @@ import warnings
 import logging
 from pyddeeg.classification.dataloaders import EEGDataset
 from pyddeeg.classification.optimization import OptunaEstimator
-from pyddeeg.classification.engine.window_estimator import WindowParamEstimator
+from pyddeeg.classification.engine.multi_window_estimator import MultiWindowEstimator
 
 # Set up module-level logger
 logger = logging.getLogger("pyddeeg.classification")
@@ -22,4 +22,4 @@ warnings.filterwarnings(
 optuna_logger = logging.getLogger("optuna")
 optuna_logger.setLevel(logging.WARNING)
 
-__all__ = ["logger", "EEGDataset", "OptunaEstimator", "WindowParamEstimator"]
+__all__ = ["logger", "EEGDataset", "OptunaEstimator", "MultiWindowEstimator"]

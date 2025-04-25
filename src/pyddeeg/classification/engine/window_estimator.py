@@ -25,13 +25,12 @@ WindowParamEstimator
                (SelectKBest → model(**params))
 """
 
+# pyddeeg/classification/window_estimator.py
 from __future__ import annotations
+from typing import Any, Dict, List, Sequence, Type
 
 import copy
 import itertools
-from pathlib import Path
-from typing import Any, Dict, List, Sequence, Type
-
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.feature_selection import SelectKBest, f_classif
@@ -39,42 +38,16 @@ from sklearn.pipeline import Pipeline
 from sklearn.utils.validation import check_is_fitted
 
 
-__all__: Sequence[str] = ("WindowParamEstimator",)
-
-
-# A *module-level* counter survives sklearn.clone() calls
+# --------------------------------------------------------------------- #
+#  Counter shared by all clones – don’t touch                           #
+# --------------------------------------------------------------------- #
 _WINDOW_COUNTER = itertools.count()
 
 
-class WindowParamEstimator(BaseEstimator, ClassifierMixin):
-    """
-    Wrapper that injects **window-specific hyper-parameters**.
+class WindowParamEstimator(BaseEstimator, ClassifierMixin):  # ★ add ClassifierMixin
+    """Inject window-specific hyper-parameters into a SlidingEstimator."""
 
-    Parameters
-    ----------
-    base_cls
-        *Class* (not an instance) of the underlying estimator
-        (e.g. ``HistGradientBoostingClassifier``).  It **must** implement
-        ``predict_proba`` so that SlidingEstimator can call it.
-    params_per_window
-        A list where ``params_per_window[w]`` is a dict of keyword
-        arguments for ``base_cls.set_params`` *plus* a mandatory key
-        ``"k"`` with the number of features to keep in the
-        ``SelectKBest`` step.
-
-        **Length must equal `n_windows`.**
-
-    Notes
-    -----
-    *   The class is intentionally *stateless* after fitting; every call to
-        :meth:`fit` overwrites ``self.fitted_`` with a brand-new pipeline.
-    *   A *global* counter is used so that successive clones get the
-        correct window index even though their ``__init__`` is called first.
-    """
-
-    #: attribute set by ``fit`` so that sliding-estimator can access it
-    classes_: np.ndarray
-
+    # ------------------------------------------------------------------
     def __init__(
         self,
         base_cls: Type[BaseEstimator],
@@ -82,57 +55,43 @@ class WindowParamEstimator(BaseEstimator, ClassifierMixin):
     ) -> None:
         self.base_cls = base_cls
         self.params_per_window = params_per_window
+        # make absolutely sure every clone *knows* it is a classifier
+        self._estimator_type = "classifier"
 
-    # --------------------------------------------------------------------- #
-    #                            scikit-learn API                           #
-    # --------------------------------------------------------------------- #
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "WindowParamEstimator":
-        """Train a **window-specific** pipeline on ``(X, y)``."""
-        window_idx = next(_WINDOW_COUNTER)
-        try:
-            p = copy.deepcopy(self.params_per_window[window_idx])
-        except IndexError as exc:  # pragma: no cover
-            raise IndexError(
-                f"Asked for window #{window_idx} but "
-                f"`params_per_window` has only {len(self.params_per_window)} "
-                "entries."
-            ) from exc
+    # ------------------------------------------------------------------
+    def fit(self, X: np.ndarray, y: np.ndarray):  # type: ignore[override]
+        w_idx = next(_WINDOW_COUNTER)
+        params = copy.deepcopy(self.params_per_window[w_idx])
+        k = params.pop("k")
 
-        # Split out the univariate-feature-selection parameter
-        k = p.pop("k")
-
-        # Build the real model
-        model = self.base_cls().set_params(**p)
-        self.fitted_: Pipeline = Pipeline(
-            steps=[
+        # build and **fit** the real model for this window
+        inner = Pipeline(
+            [
                 ("selector", SelectKBest(f_classif, k=k)),
-                ("model", model),
+                ("model", self.base_cls().set_params(**params)),
             ]
-        ).fit(X, y)
-
-        # expose .classes_  (required by MNE / cross_val_predict)
-        if not hasattr(self.fitted_[-1], "classes_"):  # pragma: no cover
-            raise AttributeError(
-                f"{self.base_cls.__name__} has no `classes_` attribute – "
-                "classification pipeline cannot be used with SlidingEstimator."
-            )
-        self.classes_ = getattr(self.fitted_[-1], "classes_")  # type: ignore[attr-defined]
+        )
+        self.fitted_ = inner.fit(X, y)  # ★ was missing
+        self.classes_ = self.fitted_[-1].classes_
         return self
 
-    # ---------- prediction delegates ------------------------------------- #
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    # ------------------------------------------------------------------
+    # scikit-learn delegates
+    def predict(self, X):
         check_is_fitted(self, "fitted_")
         return self.fitted_.predict(X)
 
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+    def predict_proba(self, X):
         check_is_fitted(self, "fitted_")
         return self.fitted_.predict_proba(X)
 
-    def decision_function(self, X: np.ndarray) -> np.ndarray:  # optional
+    def decision_function(self, X):
+        """Only delegate if the inner model implements it; otherwise fall back."""
         check_is_fitted(self, "fitted_")
-        if hasattr(self.fitted_, "decision_function"):
-            return self.fitted_.decision_function(X)  # type: ignore[attr-defined]
-        raise AttributeError("Underlying model does not implement decision_function")
+        if hasattr(self.fitted_[-1], "decision_function"):
+            return self.fitted_.decision_function(X)
+        # Fallback lets roc-auc scorer continue with probabilities
+        return self.predict_proba(X)[:, 1]
 
     # ---------- repr / param handling ------------------------------------ #
     def __repr__(self) -> str:  # noqa: D401
