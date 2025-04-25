@@ -174,7 +174,9 @@ def main() -> None:  # pragma: no cover
     logger.info("✅ EEGDataset loaded.")
 
     # ----------------------- step 2 – hyper-parameter tuning ---------------
-    best_params = tune_one_electrode_parallel(
+    # Contains two entries per window, the first one being the "best_params",
+    # and the second one, being the "best_trial_performance".
+    results_dir = tune_one_electrode_parallel(
         elec=elec,
         dataset=dataset,
         hyperparam_cfg=hyperparams,
@@ -185,10 +187,16 @@ def main() -> None:  # pragma: no cover
         storage_dir=run_dir / "optuna",
     )
     # save best params to disk
-    (run_dir / "best_params.json").write_text(json.dumps(best_params, indent=2))
+    (Path(run_dir) / "best_params.json").write_text(
+        json.dumps(
+            [p["best_params"] for p in results_dir],
+            indent=2,
+        )
+    )
+    # save best performance of the best trial per window to disk
     (Path(run_dir) / "perf.json").write_text(
         json.dumps(
-            [p["performance"] for p in best_params],
+            [p["performance"] for p in results_dir],
             indent=2,
         )
     )
@@ -199,7 +207,9 @@ def main() -> None:  # pragma: no cover
     results = evaluate_frozen_models(
         elec=elec,
         dataset=dataset,
-        params_per_window=best_params,  # ← list from the tuner
+        params_per_window=[
+            p["best_params"] for p in results_dir
+        ],  # ← list from the tuner
         base_estimator_cls=type(base_estimator),
         n_jobs=cfg.get("cv_jobs", -1),
     )

@@ -52,7 +52,11 @@ def _optuna_for_window(
         study_name=study_name,
     )
 
-    return opt.fit(Xw, y).best_params_
+    results = opt.fit(Xw, y)
+    return {
+        "best_params": results.best_params_,
+        "performance": results.best_trial_performance,
+    }
 
 
 # -----------------------------------------------------------------------------
