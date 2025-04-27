@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import numpy as np
-from typing import List, Optional
+from typing import List, Optional, Generator
 
 
 def extract_signal_windows(
@@ -52,3 +54,26 @@ def extract_signal_windows(
         windows.append(window_data)
 
     return np.array(windows) if len(windows) > 0 else []
+
+
+def iter_signal_windows(
+    signal: np.ndarray,
+    window_size: int,
+    stride: int | None = None,
+) -> Generator[tuple[int, np.ndarray], None, None]:
+    """
+    Lazy iterator over sliding windows.
+
+    Yields
+    ------
+    (index, window_view)  where `index` starts at 0.
+    """
+    if stride is None:
+        stride = window_size // 2
+    n = signal.shape[0]
+    if n < window_size:
+        return
+    n_win = (n - window_size) // stride + 1
+    for k in range(n_win):
+        start = k * stride
+        yield k, signal[start : start + window_size]

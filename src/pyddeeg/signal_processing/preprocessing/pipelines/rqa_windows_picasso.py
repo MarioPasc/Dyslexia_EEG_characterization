@@ -27,7 +27,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Any, Tuple
-from pyddeeg.signal_processing.rqa_toolbox.utils import extract_signal_windows
+from pyddeeg.signal_processing.rqa_toolbox.utils import iter_signal_windows
 from pyddeeg.signal_processing.rqa_toolbox.rqa import compute_rqa_metrics_for_window
 from pyddeeg.signal_processing.preprocessing.pipelines import CHANNEL_NAME_TO_INDEX
 from pyddeeg.signal_processing.rqa_toolbox.optimization.tuner import tune_window
@@ -35,6 +35,8 @@ from pyddeeg.signal_processing.rqa_toolbox.optimization.tuner import tune_window
 # Add Dask imports
 from dask import delayed
 from dask.distributed import Client, LocalCluster, progress
+
+import gc
 
 
 # Logging
@@ -264,25 +266,28 @@ def process_single_patient(  # unchanged signature
     -------
     Dict[window_size, Tuple[metrics[ n_m , n_w ], takens[3 , n_w]]]
     """
-    n_points = patient_signal.size
-    n_metrics = len(metrics_to_use)
     results: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
+    n_metrics = len(metrics_to_use)
+
+    # ensure the raw signal is float64 & contiguous for Numba / pyRQA
+    sig = np.ascontiguousarray(patient_signal, dtype=np.float64)
 
     for w_size in window_sizes:
         stride = w_size // 2
-        n_windows = (n_points - w_size) // stride + 1
+        n_win = (sig.size - w_size) // stride + 1
+        if n_win <= 0:
+            continue
 
-        metrics_mat = np.empty((n_metrics, n_windows), dtype=np.float32)
-        takens_mat = np.empty((3, n_windows), dtype=np.float32)
+        metrics_arr = np.empty((n_metrics, n_win), dtype=np.float32)
+        takens_arr = np.empty((3, n_win), dtype=np.float32)
 
-        # ── slide over the raw signal WITHOUT materialising an array of windows
-        for w_idx, start in enumerate(range(0, n_points - w_size + 1, stride)):
-            window = patient_signal[start : start + w_size]
+        for idx, w in iter_signal_windows(sig, w_size, stride):
+            # contiguous float64 slice view
+            w64 = np.ascontiguousarray(w, dtype=np.float64)
 
-            # tune or fall back to defaults
             if optimise_takens:
                 tau, m, eps = tune_window(
-                    window,
+                    w64,
                     max_lag=tuning_max_lag,
                     max_dim=tuning_max_dim,
                     rec_rate=tuning_rec_rate,
@@ -290,10 +295,10 @@ def process_single_patient(  # unchanged signature
             else:
                 m, tau, eps = embedding_dim, time_delay, radius
 
-            takens_mat[:, w_idx] = (tau, m, eps)
+            takens_arr[:, idx] = (tau, m, eps)
 
-            metric_vals, _ = compute_rqa_metrics_for_window(
-                window_signal=window.astype(np.float32, copy=False),
+            metric_dict, _ = compute_rqa_metrics_for_window(
+                window_signal=w64,
                 embedding_dim=m,
                 time_delay=tau,
                 radius=eps,
@@ -303,15 +308,11 @@ def process_single_patient(  # unchanged signature
                 min_vertical_line=min_vertical_line,
                 min_white_vertical_line=min_white_vertical_line,
             )
-            metrics_mat[:, w_idx] = list(metric_vals.values())
+            metrics_arr[:, idx] = list(metric_dict.values())
 
-            # micro-clean-up
-            del window, metric_vals
-        results[w_size] = (metrics_mat, takens_mat)
+        results[w_size] = (metrics_arr, takens_arr)
 
-        # help the GC once per window-size pass
-        import gc
-
+        # keep RSS low between different window sizes
         gc.collect()
 
     return results
@@ -372,13 +373,19 @@ def process_dataset(
 
     # ---------- remaining patients (optional Dask) --------------------
     def _patient_task(
-        idx: int, dataset_path: str, target_ch: int, target_bw: int, cfg: RQAConfig
+        idx: int,
+        dataset_path: str,
+        target_ch: int,
+        target_bw: int,
+        cfg: RQAConfig,
     ) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
-        """Runs inside a Dask worker – zero nested pools, explicit GC."""
-        # mmap the NPZ but copy **only** the slice we need, then close the file
-        with np.load(dataset_path, mmap_mode="r") as npz:
+        """Runs in a worker process – reads ONE patient and returns numpy
+        results.  All large arrays are released before returning."""
+        import gc
+
+        with np.load(dataset_path, mmap_mode="r") as npz_file:
             sig = np.asarray(
-                npz["data"][idx, target_ch, :, target_bw], dtype=np.float32
+                npz_file["data"][idx, target_ch, :, target_bw], dtype=np.float64
             )
 
         out = process_single_patient(
@@ -399,10 +406,8 @@ def process_dataset(
             tuning_rec_rate=cfg.tuning_rec_rate,
         )
 
-        # drop the large signal array **before** the task result is sent back
+        # explicit cleanup to keep the nanny happy
         del sig
-        import gc
-
         gc.collect()
         return out
 
