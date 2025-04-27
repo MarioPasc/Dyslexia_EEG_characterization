@@ -2,7 +2,7 @@
 #SBATCH -J EEG_RQA_Win_%j
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=16gb
+#SBATCH --mem=128gb
 #SBATCH --time=20:00:00
 #SBATCH --constraint=amd
 #SBATCH --error=rqa_win_%a_%j.err
@@ -58,6 +58,13 @@ CONFIG_DIR=$MYLOCALSCRATCH/config
 LOG_DIR=$MYLOCALSCRATCH/logs
 STATUS_DIR=$MYLOCALSCRATCH/status
 
+# avoid BLAS oversubscription inside each worker
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+
 # Create directories
 mkdir -p "$OUTPUT_DIR" "$CONFIG_DIR" "$LOG_DIR" "$STATUS_DIR"
 
@@ -73,9 +80,9 @@ cat > "$CONFIG_DIR"/rqa_windows_config.yaml << EOF
 # Dask parallel processing configuration
 dask:
   use_dask: true
-  n_workers: 16  # Number of worker processes to spawn
-  threads_per_worker: 2  # Number of threads per worker
-  memory_limit: "8GB"  # Memory limit per worker
+  n_workers: 32  # Number of worker processes to spawn
+  threads_per_worker: 1  # Number of threads per worker
+  memory_limit: "3.5GB"  # Memory limit per worker
 
 # Directories
 input_directory: "$INPUT_DIR"
