@@ -97,7 +97,7 @@ logging:
 # Processing parameters
 target_channel: "$TARGET_CHANNEL"
 target_bandwidth: "$TARGET_BANDWIDTH"
-window_sizes: [50, 100, 150, 200]
+window_sizes: [500, 750, 1000]
 
 # Tuning parameters
 optimise_takens: true
