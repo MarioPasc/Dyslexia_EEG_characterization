@@ -7,6 +7,17 @@ with multiple window sizes across multiple datasets. Configuration is loaded fro
 """
 
 import os
+
+os.environ.update(
+    {
+        "OMP_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+    }
+)
+
+
 import sys
 import yaml
 import numpy as np
@@ -428,11 +439,11 @@ def process_dataset(
     def _patient_task(
         idx: int, dataset_path: str, target_ch: int, target_bw: int, cfg: RQAConfig
     ) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
-        """Runs on the worker: mmap the NPZ, pull one slice, compute."""
-        data = np.load(dataset_path, mmap_mode="r")["data"]
-        sig = data[idx, target_ch, :, target_bw]
+        """Run inside a Dask worker ‒ no nested pools, explicit GC."""
+        with np.load(dataset_path, mmap_mode="r") as npz:
+            sig = np.asarray(npz["data"][idx, target_ch, :, target_bw])  # copy slice
 
-        return process_single_patient(
+        res = process_single_patient(
             patient_idx=idx,
             patient_signal=sig,
             window_sizes=cfg.window_sizes,
@@ -449,6 +460,11 @@ def process_dataset(
             tuning_max_dim=cfg.tuning_max_dim,
             tuning_rec_rate=cfg.tuning_rec_rate,
         )
+
+        import gc
+
+        gc.collect()  # release memory before returning
+        return res
 
     if n_pat > 1:
         indices = list(range(1, n_pat))
