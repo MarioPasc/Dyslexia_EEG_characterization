@@ -425,29 +425,42 @@ def process_dataset(
         takens_by_window[wsize][0] = tak
 
     # ---------- remaining patients (optional Dask) --------------------
-    def _patient_task(idx: int):
+    def _patient_task(
+        idx: int, dataset_path: str, target_ch: int, target_bw: int, cfg: RQAConfig
+    ) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
+        """Runs on the worker: mmap the NPZ, pull one slice, compute."""
+        data = np.load(dataset_path, mmap_mode="r")["data"]
+        sig = data[idx, target_ch, :, target_bw]
+
         return process_single_patient(
             patient_idx=idx,
-            patient_signal=data[idx, config.target_channel, :, config.target_bandwidth],
-            window_sizes=config.window_sizes,
-            optimise_takens=config.optimise_takens,
-            embedding_dim=config.embedding_dim,
-            time_delay=config.time_delay,
-            radius=config.radius,
-            distance_metric=config.distance_metric,
-            metrics_to_use=config.metrics_to_use,
-            min_diagonal_line=config.min_diagonal_line,
-            min_vertical_line=config.min_vertical_line,
-            min_white_vertical_line=config.min_white_vertical_line,
-            tuning_max_lag=config.tuning_max_lag,
-            tuning_max_dim=config.tuning_max_dim,
-            tuning_rec_rate=config.tuning_rec_rate,
+            patient_signal=sig,
+            window_sizes=cfg.window_sizes,
+            optimise_takens=cfg.optimise_takens,
+            embedding_dim=cfg.embedding_dim,
+            time_delay=cfg.time_delay,
+            radius=cfg.radius,
+            distance_metric=cfg.distance_metric,
+            metrics_to_use=cfg.metrics_to_use,
+            min_diagonal_line=cfg.min_diagonal_line,
+            min_vertical_line=cfg.min_vertical_line,
+            min_white_vertical_line=cfg.min_white_vertical_line,
+            tuning_max_lag=cfg.tuning_max_lag,
+            tuning_max_dim=cfg.tuning_max_dim,
+            tuning_rec_rate=cfg.tuning_rec_rate,
         )
 
     if n_pat > 1:
         indices = list(range(1, n_pat))
         if client:
-            futures = client.map(_patient_task, indices)
+            futures = client.map(
+                _patient_task,
+                indices,
+                dataset_path=dataset_path,
+                target_ch=config.target_channel,
+                target_bw=config.target_bandwidth,
+                cfg=config,
+            )
             for idx, pat_dict in zip(indices, client.gather(futures)):
                 for wsize, (met, tak) in pat_dict.items():
                     results_by_window[wsize]["results_tensor"][idx] = met
