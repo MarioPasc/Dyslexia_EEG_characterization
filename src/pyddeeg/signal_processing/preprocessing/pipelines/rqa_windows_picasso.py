@@ -19,7 +19,7 @@ from typing import List, Dict, Optional, Any, Tuple
 from pyddeeg.signal_processing.rqa_toolbox.utils import extract_signal_windows
 from pyddeeg.signal_processing.rqa_toolbox.rqa import compute_rqa_metrics_for_window
 from pyddeeg.signal_processing.preprocessing.pipelines import CHANNEL_NAME_TO_INDEX
-from pyddeeg.signal_processing.rqa_toolbox.tuner import tune_window
+from pyddeeg.signal_processing.rqa_toolbox.optimization.tuner import tune_window
 
 # Add Dask imports
 from dask import delayed
@@ -452,13 +452,45 @@ def process_dataset(
                 for wsize, (met, tak) in pat_dict.items():
                     results_by_window[wsize]["results_tensor"][idx] = met
                     takens_by_window[wsize][idx] = tak
+                # --- Logging every X patients ---
+                if idx % 10 == 0:
+                    for wsize, tak in pat_dict.items():
+                        tak_arr = tak[1]  # shape [3, n_win]
+                        n_win = tak_arr.shape[1]
+                        if n_win >= 3:
+                            mid_idxs = (
+                                [n_win // 2 - 1, n_win // 2, n_win // 2 + 1]
+                                if n_win > 3
+                                else list(range(n_win))
+                            )
+                        else:
+                            mid_idxs = list(range(n_win))
+                        vals = tak_arr[:, mid_idxs]
+                        logger.info(
+                            f"[Patient {idx}] Window {wsize}: tau={vals[0]}, m={vals[1]}, eps={vals[2]}"
+                        )
         else:
             for idx in indices:
                 pat_dict = _patient_task(idx)
                 for wsize, (met, tak) in pat_dict.items():
                     results_by_window[wsize]["results_tensor"][idx] = met
                     takens_by_window[wsize][idx] = tak
-
+                # --- Logging every X patients ---
+                if idx % 10 == 0:
+                    for wsize, (met, tak_arr) in pat_dict.items():
+                        n_win = tak_arr.shape[1]
+                        if n_win >= 3:
+                            mid_idxs = (
+                                [n_win // 2 - 1, n_win // 2, n_win // 2 + 1]
+                                if n_win > 3
+                                else list(range(n_win))
+                            )
+                        else:
+                            mid_idxs = list(range(n_win))
+                        vals = tak_arr[:, mid_idxs]
+                        logger.info(
+                            f"[Patient {idx}] Window {wsize}: tau={vals[0]}, m={vals[1]}, eps={vals[2]}"
+                        )
     # ---------- return ------------------------------------------------
     return {
         "dataset_name": dataset_name,
