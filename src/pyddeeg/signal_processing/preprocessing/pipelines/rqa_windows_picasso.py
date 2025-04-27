@@ -150,16 +150,16 @@ class RQAConfig:
     # Window parameters
     window_sizes: List[int]
 
-    # Optimization parameters
-    optimise_takens: bool
-    tuning_max_lag: int = 100
-    tuning_max_dim: int = 10
-    tuning_rec_rate: float = 0.15
-
     # Output parameters
     save_results: bool
     file_prefix: str
     verbose: bool
+
+    # Optimization parameters
+    optimise_takens: bool = True
+    tuning_max_lag: int = 100
+    tuning_max_dim: int = 10
+    tuning_rec_rate: float = 0.15
 
     # Dask parameters
     use_dask: bool = True

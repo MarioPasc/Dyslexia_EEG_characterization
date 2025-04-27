@@ -52,7 +52,7 @@ mkdir -p "$MYLOCALSCRATCH"
 
 # Define paths
 PROJ_DIR=/mnt/home/users/tic_163_uma/mpascual/fscratch/repos/Dyslexia_EEG_characterization
-INPUT_DIR=/mnt/home/users/tic_163_uma/mpascual/fscratch/datasets/EEG
+INPUT_DIR=/mnt/home/users/tic_163_uma/mpascual/fscratch/datasets/EEG/zerolag
 OUTPUT_DIR=$MYLOCALSCRATCH/results
 CONFIG_DIR=$MYLOCALSCRATCH/config
 LOG_DIR=$MYLOCALSCRATCH/logs
