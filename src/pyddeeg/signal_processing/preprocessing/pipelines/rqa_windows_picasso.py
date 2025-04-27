@@ -238,7 +238,7 @@ def load_config(yaml_path: str) -> RQAConfig:
 
 
 # Code
-def process_single_patient(
+def process_single_patient(  # unchanged signature
     patient_idx: int,
     patient_signal: np.ndarray,
     window_sizes: List[int],
@@ -257,24 +257,32 @@ def process_single_patient(
     tuning_rec_rate: float,
 ) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
     """
-    Return a dict mapping window_size → (metrics, takens).
+    Compute the (metrics × windows) tensor **streamingly** so that at most
+    *one* EEG window lives in memory.
 
-    * **metrics** has shape ``[n_metrics, n_windows]``.
-    * **takens**  has shape ``[3, n_windows]`` storing τ, m, ε.
+    Returns
+    -------
+    Dict[window_size, Tuple[metrics[ n_m , n_w ], takens[3 , n_w]]]
     """
+    n_points = patient_signal.size
+    n_metrics = len(metrics_to_use)
     results: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
 
-    for window_size in window_sizes:
-        stride = window_size // 2
-        windows = extract_signal_windows(patient_signal, window_size, stride)
+    for w_size in window_sizes:
+        stride = w_size // 2
+        n_windows = (n_points - w_size) // stride + 1
 
-        met_rows: List[List[float]] = []
-        tak_rows: List[Tuple[int, int, float]] = []
+        metrics_mat = np.empty((n_metrics, n_windows), dtype=np.float32)
+        takens_mat = np.empty((3, n_windows), dtype=np.float32)
 
-        for w in windows:
+        # ── slide over the raw signal WITHOUT materialising an array of windows
+        for w_idx, start in enumerate(range(0, n_points - w_size + 1, stride)):
+            window = patient_signal[start : start + w_size]
+
+            # tune or fall back to defaults
             if optimise_takens:
                 tau, m, eps = tune_window(
-                    w,
+                    window,
                     max_lag=tuning_max_lag,
                     max_dim=tuning_max_dim,
                     rec_rate=tuning_rec_rate,
@@ -282,10 +290,10 @@ def process_single_patient(
             else:
                 m, tau, eps = embedding_dim, time_delay, radius
 
-            tak_rows.append((tau, m, eps))
+            takens_mat[:, w_idx] = (tau, m, eps)
 
-            metric_dict, _ = compute_rqa_metrics_for_window(
-                window_signal=w,
+            metric_vals, _ = compute_rqa_metrics_for_window(
+                window_signal=window.astype(np.float32, copy=False),
                 embedding_dim=m,
                 time_delay=tau,
                 radius=eps,
@@ -295,91 +303,18 @@ def process_single_patient(
                 min_vertical_line=min_vertical_line,
                 min_white_vertical_line=min_white_vertical_line,
             )
-            met_rows.append(list(metric_dict.values()))
+            metrics_mat[:, w_idx] = list(metric_vals.values())
 
-        metrics_t = np.array(met_rows).T if met_rows else np.empty((0, 0))
-        takens_t = np.array(tak_rows).T if tak_rows else np.empty((3, 0))
-        results[window_size] = (metrics_t, takens_t)
+            # micro-clean-up
+            del window, metric_vals
+        results[w_size] = (metrics_mat, takens_mat)
+
+        # help the GC once per window-size pass
+        import gc
+
+        gc.collect()
 
     return results
-
-
-def compute_rqa_metrics_for_signal(
-    signal: np.ndarray,
-    window_size: int,
-    stride: int,
-    embedding_dim: int = 10,
-    time_delay: int = 1,
-    radius: float = 0.8,
-    distance_metric: str = "euclidean",
-    metrics_to_use: list = None,
-    min_diagonal_line: int = 2,
-    min_vertical_line: int = 2,
-    min_white_vertical_line: int = 2,
-) -> tuple[np.ndarray, list]:
-    """
-    Compute RQA metrics for a signal using sliding windows and return as a tensor.
-
-    Parameters:
-    -----------
-    signal : np.ndarray
-        1D array containing the signal to analyze
-    window_size : int
-        Size of each window in samples
-    stride : int
-        Step size between consecutive windows in samples
-    embedding_dim : int
-        Embedding dimension for phase space reconstruction
-    time_delay : int
-        Time delay for phase space reconstruction
-    radius : float
-        Threshold radius for recurrence detection
-    distance_metric : str
-        Distance metric to use for recurrence calculation
-    metrics_to_use : list
-        List of specific RQA metrics to compute
-    min_diagonal_line : int
-        Minimum diagonal line length for determinism calculation
-    min_vertical_line : int
-        Minimum vertical line length for laminarity calculation
-    min_white_vertical_line : int
-        Minimum white vertical line length
-
-    Returns:
-    --------
-    metrics_tensor : np.ndarray
-        Tensor with shape [metrics, window_points] containing RQA metrics for each window
-    metric_names : list
-        List of metric names in the same order as in the tensor
-    """
-    # Extract windows from signal
-    windows = extract_signal_windows(signal, window_size, stride)
-
-    # Initialize list to store metrics for each window
-    all_metrics = []
-
-    # Process each window
-    for window_signal in windows:
-        metrics, _ = compute_rqa_metrics_for_window(
-            window_signal=window_signal,
-            embedding_dim=embedding_dim,
-            time_delay=time_delay,
-            radius=radius,
-            distance_metric=distance_metric,
-            metrics_to_use=metrics_to_use,
-            min_diagonal_line=min_diagonal_line,
-            min_vertical_line=min_vertical_line,
-            min_white_vertical_line=min_white_vertical_line,
-        )
-        all_metrics.append(list(metrics.values()))
-
-    # Convert to numpy array and transpose to get [metrics, window_points] shape
-    metrics_tensor = np.array(all_metrics).T if all_metrics else np.array([])
-
-    # Extract metric names for reference
-    metric_names = list(metrics.keys()) if all_metrics else []
-
-    return metrics_tensor, metric_names
 
 
 def process_dataset(
@@ -439,11 +374,14 @@ def process_dataset(
     def _patient_task(
         idx: int, dataset_path: str, target_ch: int, target_bw: int, cfg: RQAConfig
     ) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
-        """Run inside a Dask worker ‒ no nested pools, explicit GC."""
+        """Runs inside a Dask worker – zero nested pools, explicit GC."""
+        # mmap the NPZ but copy **only** the slice we need, then close the file
         with np.load(dataset_path, mmap_mode="r") as npz:
-            sig = np.asarray(npz["data"][idx, target_ch, :, target_bw])  # copy slice
+            sig = np.asarray(
+                npz["data"][idx, target_ch, :, target_bw], dtype=np.float32
+            )
 
-        res = process_single_patient(
+        out = process_single_patient(
             patient_idx=idx,
             patient_signal=sig,
             window_sizes=cfg.window_sizes,
@@ -461,10 +399,12 @@ def process_dataset(
             tuning_rec_rate=cfg.tuning_rec_rate,
         )
 
+        # drop the large signal array **before** the task result is sent back
+        del sig
         import gc
 
-        gc.collect()  # release memory before returning
-        return res
+        gc.collect()
+        return out
 
     if n_pat > 1:
         indices = list(range(1, n_pat))
