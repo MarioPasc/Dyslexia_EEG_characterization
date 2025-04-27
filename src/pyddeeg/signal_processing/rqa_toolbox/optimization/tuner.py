@@ -54,7 +54,7 @@ def _estimate_tau(signal: bytes, max_lag: int, bins: int) -> int:
 def _estimate_m(signal: np.ndarray, tau: int, max_dim: int) -> int:
     """Smallest dimension whose overall false‑neighbour fraction < 1 %."""
     dims = list(range(1, max_dim + 1))
-    f1, f2, f3 = dimension.fnn(signal, dim=dims, tau=tau, R=10.0, A=2.0)
+    f1, f2, f3 = dimension.fnn(signal, dim=dims, tau=tau, R=10.0, A=2.0, parallel=False)
     below = np.where(f3 < 0.01)[0]
     return int(dims[below[0]]) if below.size else int(dims[int(np.argmin(f3))])
 
