@@ -409,6 +409,11 @@ def process_dataset(
         # explicit cleanup to keep the nanny happy
         del sig
         gc.collect()
+        from pyddeeg.signal_processing.rqa_toolbox.optimization.tuner import (
+            _estimate_tau,
+        )
+
+        _estimate_tau.cache_clear()
         return out
 
     if n_pat > 1:

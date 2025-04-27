@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pyunicorn.timeseries import RecurrencePlot
 
+
 def compute_rqa_metrics_for_window(
     window_signal: np.ndarray,
     embedding_dim: int,
@@ -82,7 +83,7 @@ def compute_rqa_metrics_for_window(
     }
 
     if metrics_to_use is None:
-        metrics_to_use = metric_functions.keys() # Use all!
+        metrics_to_use = metric_functions.keys()  # Use all!
 
     # Compute requested metrics
     metrics = {}
@@ -95,10 +96,18 @@ def compute_rqa_metrics_for_window(
         else:
             metrics[metric] = None
 
-    if cache_recurrence_plot:
-        return metrics, rp
-    else:
+    # right before `return metrics, None`
+    if not cache_recurrence_plot:
+        try:
+            del rp.recurrence_matrix  # or rp.rec_mat if stored
+        except Exception:
+            pass
+        del rp
+        import gc
+
+        gc.collect()
         return metrics, None
+
 
 def plot_rqa(
     data: np.ndarray,
