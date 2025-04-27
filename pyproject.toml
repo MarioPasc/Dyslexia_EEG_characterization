@@ -17,7 +17,6 @@ dependencies = [
   "scienceplots",
   "pyunicorn",
   "pandas",
-  "Scikit-Learn",
   "dask",
   "PyYAML",
   "distributed",
@@ -27,7 +26,9 @@ dependencies = [
   "tqdm-joblib",
   "optuna",
   "filelock",
+  "nolitsa @ git+https://github.com/manu-mannattil/nolitsa.git",
 ]
+
 description = "A Python library that contains all the functions used to perform experiments on EEG data for the analysis and characterization of Developmental Dyslexia (DD)."
 keywords = ["eeg", "machine learning", "recurrence analysis"]
 license = {file = "LICENSE"}

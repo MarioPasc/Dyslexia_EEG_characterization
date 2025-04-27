@@ -76,7 +76,7 @@ dask:
   n_workers: 16  # Number of worker processes to spawn
   threads_per_worker: 2  # Number of threads per worker
   memory_limit: "8GB"  # Memory limit per worker
-  
+
 # Directories
 input_directory: "$INPUT_DIR"
 output_directory: "$OUTPUT_DIR"
@@ -96,8 +96,14 @@ logging:
 
 # Processing parameters
 target_channel: "$TARGET_CHANNEL"
-target_bandwidth: "$TARGET_BANDWIDTH" 
+target_bandwidth: "$TARGET_BANDWIDTH"
 window_sizes: [50, 100, 150, 200]
+
+# Tuning parameters
+optimise_takens: true
+tuning_max_lag: 120
+tuning_max_dim: 12
+tuning_rec_rate: 0.15
 
 # RQA/RQE parameters
 rqa_parameters:
