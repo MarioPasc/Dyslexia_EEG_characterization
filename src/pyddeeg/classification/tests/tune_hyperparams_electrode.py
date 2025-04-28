@@ -205,7 +205,6 @@ def main() -> None:  # pragma: no cover
     # ----------------------- step 3 – outer-CV evaluation -------------------
 
     results = evaluate_frozen_models(
-        elec=elec,
         dataset=dataset,
         params_per_window=[
             p["best_params"] for p in results_dir
