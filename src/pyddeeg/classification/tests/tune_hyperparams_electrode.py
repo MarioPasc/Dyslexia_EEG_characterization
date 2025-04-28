@@ -210,7 +210,7 @@ def main() -> None:  # pragma: no cover
             p["best_params"] for p in results_dir
         ],  # ← list from the tuner
         base_estimator_cls=type(base_estimator),
-        n_jobs=cfg.get("cv_jobs", -1),
+        n_jobs_windows=cfg.get("cv_jobs", -1),
     )
     np.savez_compressed(run_dir / "cv_results.npz", **results)
     logger.info("🏁 Outer-CV finished. Results stored.")
