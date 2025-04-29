@@ -90,7 +90,6 @@ def reorganize_data(data, window_sizes, electrode_indexed_dir):
             for file_path in files:
                 # Get condition from file path
                 condition = file_path.split("/")[-2]  # DD_DOWN, CT_UP, etc.
-
                 # Load data
                 npz_data = np.load(file_path, allow_pickle=True)
 
