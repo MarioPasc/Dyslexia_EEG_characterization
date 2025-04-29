@@ -214,8 +214,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Reorganize EEG RQA data by window size."
     )
-    parser.add_argument("--raw-dir", help="Directory containing raw data")
-    parser.add_argument("--output-dir", help="Directory for output")
+    parser.add_argument(
+        "--raw-dir",
+        help="Directory containing raw data",
+        default="/home/mariopasc/Python/Datasets/EEG/timeseries/processed/rqa_windows/raw",
+    )
+    parser.add_argument(
+        "--output-dir",
+        help="Directory for output",
+        default="/home/mariopasc/Python/Datasets/EEG/timeseries/processed/rqa_windows/dataset",
+    )
 
     args = parser.parse_args()
 

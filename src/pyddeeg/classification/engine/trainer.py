@@ -44,38 +44,6 @@ __all__: Sequence[str] = (
 
 
 # -----------------------------------------------------------------------------#
-#                                small helpers                                 #
-# -----------------------------------------------------------------------------#
-def _epochs_from_tensor(
-    *, elec: str, X: np.ndarray, sfreq: float | int
-) -> mne.EpochsArray:
-    """Wrap ``(subjects × metrics × windows)`` into a single-epoch MNE object."""
-    info = mne.create_info(
-        ch_names=[f"{elec}_{metric}" for metric in RQA_METRICS],
-        sfreq=float(sfreq),
-        ch_types="eeg",
-    )
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=RuntimeWarning, message="Missing")
-        epochs = mne.EpochsArray(X, info, tmin=0.0)
-        epochs.set_montage("standard_1020", on_missing="ignore")
-    return epochs
-
-
-def _stack_classes_selected(estimator: MultiWindowEstimator) -> np.ndarray:
-    """
-    Extract the boolean *feature-selection* mask for **each window**.
-
-    Returns
-    -------
-    mask : ndarray, shape (n_windows, 15)
-    """
-    return np.vstack(
-        [pipe.named_steps["selector"].get_support() for pipe in estimator.estimators_]
-    )
-
-
-# -----------------------------------------------------------------------------#
 #                           cross-validated evaluation                         #
 # -----------------------------------------------------------------------------#
 def evaluate_frozen_models(

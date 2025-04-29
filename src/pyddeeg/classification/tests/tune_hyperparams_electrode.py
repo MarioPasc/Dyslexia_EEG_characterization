@@ -31,7 +31,10 @@ from pyddeeg.utils.postprocessing.reorganize_per_window_results import (
     reorganization_pipeline,
 )
 from pyddeeg.classification.optimization.tuner import tune_one_electrode_parallel
-from pyddeeg.classification.engine.trainer import evaluate_frozen_models
+from pyddeeg.classification.engine.trainer import (
+    evaluate_frozen_models,
+    permutation_test_decision_scores,
+)
 
 
 # -----------------------------------------------------------------------------#
@@ -212,8 +215,26 @@ def main() -> None:  # pragma: no cover
         base_estimator_cls=type(base_estimator),
         n_jobs_windows=cfg.get("cv_jobs", -1),
     )
+    results["cv_indices"] = np.array(results["cv_indices"], dtype=object)
     np.savez_compressed(run_dir / "cv_results.npz", **results)
     logger.info("🏁 Outer-CV finished. Results stored.")
+
+    """ To load these results:
+    with np.load(run_dir / "cv_results.npz", allow_pickle=True) as data:
+    cv_indices = data["cv_indices"].tolist()  # back to Python list of (train_idx, test_idx)
+    """
+
+    # ----------------------- step 4 – cluster-based permutation test ---------
+    perm_results = permutation_test_decision_scores(
+        decision_scores=results["decision_scores"],
+        labels=results["labels"],
+        n_permutations=10000,
+        tail=1,
+        seed=seed,
+    )
+    # save permutation-test outputs (T_obs, clusters, p_values, H0)
+    np.savez_compressed(run_dir / "permutation_results.npz", **perm_results)
+    logger.info("🔬 Permutation test complete & results saved.")
 
     logger.info("🎉 Job done.")
 
