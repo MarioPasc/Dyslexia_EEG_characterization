@@ -224,8 +224,8 @@ class OptunaEstimator(BaseEstimator):
         }
 
         # ---- 2) re-instantiate selector *with its own best params* ------- #
-        selector_tmp, _ = load_selector(self.selector_cfg_path, trial=None)
-        selector_best = type(selector_tmp)(**selector_params_best)
+        selector_tpl, _ = load_selector(self.selector_cfg_path, trial=None)
+        selector_best = type(selector_tpl)(**selector_params_best)
 
         model_best = clone(self.base_estimator).set_params(**model_params_best)
         self.pipeline_ = build_pipeline(selector=selector_best, model=model_best)

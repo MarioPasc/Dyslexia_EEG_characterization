@@ -5,7 +5,6 @@ both Optuna tuning and the final evaluation stage.
 """
 
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Dict, Optional, Tuple, Union
 
 import yaml
@@ -18,9 +17,23 @@ import optuna
 # --------------------------------------------------------------------------- #
 # Helper: import "pkg.module.ClassName" → <class '...'>
 # --------------------------------------------------------------------------- #
-def _resolve_dotted(path: str) -> type:
+def _resolve_dotted(path: str) -> Any:
     mod, _, name = path.rpartition(".")
     return getattr(import_module(mod), name)
+
+
+# --------------------------------------------------------------------------- #
+# Helper: auto-import dotted strings used as parameter *values*
+# --------------------------------------------------------------------------- #
+def _maybe_import(value: Any) -> Any:
+    """If *value* is a dotted-path string and can be imported, return the
+    imported object; otherwise return *value* unchanged."""
+    if isinstance(value, str) and "." in value:
+        try:
+            return _resolve_dotted(value)
+        except (ImportError, AttributeError):
+            pass
+    return value
 
 
 # --------------------------------------------------------------------------- #
@@ -62,10 +75,11 @@ def load_selector(
 
     # --- no tuning --------------------------------------------------------- #
     if trial is None or optuna is None:
-        fixed = {
-            k: (v if not isinstance(v, dict) else v.get("value"))  # plain value
-            for k, v in space.items()
-        }
+        fixed: Dict[str, Any] = {}
+        for k, v in space.items():
+            if isinstance(v, dict):  # e.g. {"value": 10}
+                v = v.get("value")
+            fixed[k] = _maybe_import(v)
         return cls(**fixed), fixed
 
     # --- tuning with Optuna ------------------------------------------------- #
@@ -77,11 +91,13 @@ def load_selector(
     suggested: Dict[str, Any] = {}
     for name, spec in space.items():
         if not isinstance(spec, dict):  # constant
-            suggested[name] = spec
+            suggested[name] = _maybe_import(spec)
             continue
 
         if "choices" in spec:  # categorical
             suggested[name] = trial.suggest_categorical(name, spec["choices"])
+            choice = trial.suggest_categorical(name, spec["choices"])
+            suggested[name] = _maybe_import(choice)
         elif all(k in spec for k in ("low", "high")):
             low, high = spec["low"], spec["high"]
             if isinstance(low, int) and isinstance(high, int):
