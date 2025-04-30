@@ -144,11 +144,17 @@ def print_dataset_summary(dataset: EEGDataset) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
 def print_tuning_summary(tuning_results: Sequence[Dict[str, Any]]) -> None:
     """
-    Summarise Optuna search results produced by ``tune_one_electrode(_parallel)``.
+    Summarise Optuna search results.
+
+    Each entry in *tuning_results* must contain
+    ``"best_params"``  – dict of hyper-parameters
+    ``"performance"``  – either a float **or** a dict with keys
+                         {"mean", "std", "median", "folds"}.
     """
-    if len(tuning_results) == 0:
+    if not tuning_results:
         print("🔧  Tuning results empty.")
         logger.warning("Tuning summary: empty results list.")
         return
@@ -157,16 +163,33 @@ def print_tuning_summary(tuning_results: Sequence[Dict[str, Any]]) -> None:
     print(header)
     logger.info(header)
 
-    row_fmt = "      • Window #{idx:<2}: ROC-AUC = {auc:6.4f}   best_params = {params}"
-    aucs = []
-    for idx, win in enumerate(tuning_results, start=1):
-        auc = float(win.get("performance", np.nan))
-        aucs.append(auc)
-        params = json.dumps(win.get("best_params", {}), separators=(",", ":"))
-        print(row_fmt.format(idx=idx, auc=auc, params=params))
-        logger.info("Window %s – ROC-AUC %.4f – params %s", idx, auc, params)
+    # Helper to pull a sensible scalar + formatted string out of "performance"
+    def _parse_perf(perf: Any) -> tuple[float, str]:
+        if isinstance(perf, dict):
+            mean = float(perf.get("mean", np.nan))
+            std = float(perf.get("std", np.nan))
+            return mean, f"{mean:6.4f} ± {std:5.4f}"
+        # fall back to “it’s probably a float already”
+        mean = float(perf)
+        return mean, f"{mean:6.4f}"
 
-    print(f"      ↳ mean ROC-AUC across windows = {np.nanmean(aucs):.4f}")
+    row_fmt = "      • Window #{idx:<2}: ROC-AUC = {perf:<18}   best_params = {params}"
+
+    means: list[float] = []
+    for idx, win in enumerate(tuning_results, start=1):
+        mean_auc, perf_str = _parse_perf(win.get("performance", np.nan))
+        means.append(mean_auc)
+
+        # pretty-print the params without new-lines and trim if too long
+        params_txt = json.dumps(win.get("best_params", {}), separators=(",", ":"))
+        params_txt = (params_txt[:80] + "…") if len(params_txt) > 80 else params_txt
+
+        print(row_fmt.format(idx=idx, perf=perf_str, params=params_txt))
+        logger.info(
+            "Window %s – ROC-AUC %s – params %s", idx, perf_str.strip(), params_txt
+        )
+
+    print(f"      ↳ mean ROC-AUC across windows = {np.nanmean(means):.4f}")
 
 
 # --------------------------------------------------------------------------- #
