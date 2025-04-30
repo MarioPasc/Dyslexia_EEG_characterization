@@ -25,6 +25,7 @@ from optuna.storages._rdb.models import BaseModel
 
 from sklearn.base import BaseEstimator, clone
 from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import cross_val_score
 
@@ -122,7 +123,13 @@ class OptunaEstimator(BaseEstimator):
 
             selector = SelectKBest(f_classif, k=k)
             model = clone(self.base_estimator).set_params(**params)
-            pipeline = Pipeline([("selector", selector), ("model", model)])
+            pipeline = Pipeline(
+                [
+                    ("scale", StandardScaler()),
+                    ("selector", selector),
+                    ("model", model),
+                ]
+            )
 
             scores = cross_val_score(
                 pipeline,

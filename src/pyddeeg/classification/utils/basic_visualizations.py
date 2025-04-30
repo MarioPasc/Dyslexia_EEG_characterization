@@ -151,7 +151,7 @@ def plot_auc_and_selected_features(
     ax2.set_ylabel("RQA Metric")
     ax2.set_title("Selected features per window (1=selected)")
     if show_colorbar:
-        plt.colorbar(im, ax=ax2, orientation="vertical", label="Selected")
+        plt.colorbar(im, ax=ax2, orientation="horizontal", label="Selected")
 
     plt.tight_layout()
     return fig, (ax1, ax2)
