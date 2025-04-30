@@ -82,7 +82,6 @@ class OptunaEstimator(BaseEstimator):
         # Parse YAML and override defaults                                   #
         # ------------------------------------------------------------------ #
         cfg = load_optuna_config(config_yaml or {})  # empty dict if None
-        self.selector_cfg_path = selector_cfg_path
 
         self.n_trials = n_trials or cfg["n_trials"]
         self.random_state = random_state or cfg["random_state"]
@@ -109,9 +108,7 @@ class OptunaEstimator(BaseEstimator):
         self.random_state = random_state
         self.study_name = study_name
 
-        self.selector_cfg: dict = cfg["selector"]
-        self.selector_cls: type = resolve_dotted(self.selector_cfg["class"])
-        self.selector_space: dict = self.selector_cfg.get("params", {})
+        self.selector_cfg_path = selector_cfg_path
 
         self.cv = (
             StratifiedGroupKFold(

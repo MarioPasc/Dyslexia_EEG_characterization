@@ -67,7 +67,7 @@ _BRAIN_ART = r"""
               ×÷  √ππππ√    ≈π√ ∞√  √ π√√   ÷=             
                π≈÷   ≈ππ  √     π√π√π    =÷≈               
                   √÷   π          ππ   ÷=                  
-                     π∞==÷=××÷×-××××≠π                                                              
+                     π∞==÷=××÷×-××××≠π                                         
 """
 
 
@@ -85,7 +85,8 @@ def print_welcome_banner(*, package_version: str | None = None) -> None:
     """
     title = f"pyddeeg {package_version}" if package_version else "pyddeeg"
     subtitle = (
-        "Time-resolved EEG classification with non-linear recurrence chaos metrics\n"
+        "Time-resolved EEG classification with windowed non-linear recurrence chaos metrics for \n"
+        "neural adaptation in developmental dyslexia research.\n"
         "Mario Pascual González & Dr. Ignacio Rodríguez Rodríguez  •  BioSiP-Lab, University of Málaga"
     )
 
