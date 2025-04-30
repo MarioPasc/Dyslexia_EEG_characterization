@@ -35,7 +35,13 @@ from pyddeeg.classification.engine.trainer import (
     evaluate_frozen_models,
     permutation_test_decision_scores,
 )
-
+from pyddeeg.classification.utils.report import (
+    print_welcome_banner,
+    print_dataset_summary,
+    print_tuning_summary,
+    print_cv_results_summary,
+    print_permutation_test_summary,
+)
 
 # -----------------------------------------------------------------------------#
 #                              helpers                                          #
@@ -112,10 +118,12 @@ def _cli() -> list:
 #                                main                                          #
 # -----------------------------------------------------------------------------#
 def main() -> None:  # pragma: no cover
+
     argparser_settings = _cli()
     elec = argparser_settings[0]
     settings_file = argparser_settings[1]
     threads = argparser_settings[2]
+    print_welcome_banner(package_version="0.1")
 
     logger.info(f"Electrode: {elec}")
     logger.info(f"Settings file: {settings_file}")
@@ -177,7 +185,7 @@ def main() -> None:  # pragma: no cover
 
     # ----------------------- step 1 – load dataset --------------------------
     dataset = EEGDataset.load(ds_root, window, direction, elec, random_state=seed)
-    logger.info("✅ EEGDataset loaded.")
+    print_dataset_summary(dataset)
 
     # ----------------------- step 2 – hyper-parameter tuning ---------------
     # Contains two entries per window, the first one being the "best_params",
@@ -207,7 +215,7 @@ def main() -> None:  # pragma: no cover
         )
     )
     logger.info("🔧 Tuning complete & parameters saved.")
-
+    print_tuning_summary(results_dir)
     # ----------------------- step 3 – outer-CV evaluation -------------------
 
     results = evaluate_frozen_models(
@@ -221,7 +229,7 @@ def main() -> None:  # pragma: no cover
     )
     results["cv_indices"] = np.array(results["cv_indices"], dtype=object)
     np.savez_compressed(run_dir / "cv_results.npz", **results)
-    logger.info("🏁 Outer-CV finished. Results stored.")
+    print_cv_results_summary(results)
 
     """ To load these results:
     with np.load(run_dir / "cv_results.npz", allow_pickle=True) as data:
@@ -238,7 +246,7 @@ def main() -> None:  # pragma: no cover
     )
     # save permutation-test outputs (T_obs, clusters, p_values, H0)
     np.savez_compressed(run_dir / "permutation_results.npz", **perm_results)
-    logger.info("🔬 Permutation test complete & results saved.")
+    print_permutation_test_summary(perm_results)
 
     logger.info("🎉 Job done.")
 
