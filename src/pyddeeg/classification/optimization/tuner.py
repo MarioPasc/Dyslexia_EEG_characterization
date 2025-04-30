@@ -75,7 +75,8 @@ def tune_one_electrode(
     hyperparam_cfg: Dict[str, Dict[str, Any]],
     *,
     base_estimator,
-    optuna_configuration: str | Path | Dict[str, Any] | None = None,
+    optuna_configuration: str | Path | Dict[str, Any] | None = OPTUNA_FALLBACK_PATH,
+    selector_configuration: str | Path = SELECTOR_FALLBACK_PATH,
     random_state: int = 42,
     storage_dir: str | Path | None = None,
 ) -> List[Dict[str, Any]]:
@@ -103,6 +104,7 @@ def tune_one_electrode(
                 win_idx=w,
                 storage_dir=storage_dir,
                 optuna_configuration=optuna_configuration,
+                selector_configuration=selector_configuration,
             )
         )
     bar.close()
@@ -150,7 +152,6 @@ def tune_one_electrode_parallel(
     warnings.filterwarnings(
         "ignore", category=RuntimeWarning, message="invalid value encountered in divide"
     )
-
     X = np.concatenate([dataset.dd, dataset.ct])
     y = np.concatenate([np.ones(len(dataset.dd)), np.zeros(len(dataset.ct))])
     n_windows = X.shape[-1]

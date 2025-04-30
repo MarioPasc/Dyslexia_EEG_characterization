@@ -196,6 +196,7 @@ def main() -> None:  # pragma: no cover
         hyperparam_cfg=hyperparams,
         base_estimator=base_estimator,
         optuna_configuration=optuna_cfg,
+        selector_configuration=selector_cfg,
         random_state=seed,
         n_jobs=int(threads),
         storage_dir=run_dir / "optuna",
