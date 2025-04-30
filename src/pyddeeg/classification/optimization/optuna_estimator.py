@@ -110,13 +110,11 @@ class OptunaEstimator(BaseEstimator):
 
         self.selector_cfg_path = selector_cfg_path
 
-        self.cv = (
-            StratifiedGroupKFold(
-                n_splits=self.dataset.cv.get_n_splits(),
-                shuffle=True,
-                random_state=self.random_state,
-            ),
-        )  # fresh *inner* splitter → no leakage
+        self.cv = StratifiedGroupKFold(
+            n_splits=self.dataset.cv.get_n_splits(),
+            shuffle=True,
+            random_state=self.random_state,
+        )
 
     # ---------------------------------------------------------------------
     #                   Optuna objective & helper methods
