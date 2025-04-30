@@ -1,6 +1,6 @@
 # General experiment parameters (same for every array task)
 dataset_root: /mnt/home/users/tic_163_uma/mpascual/execs/WINDOW_CLASSIFICATION/dataset
-window:       window_200
+window:       window_500
 direction:    up
 seed:         42
 # If you dont have alredy executed the reorganization of folders
@@ -9,11 +9,12 @@ seed:         42
 raw_data_results: /mnt/home/users/tic_163_uma/mpascual/fscratch/datasets/EEG/raw
 
 # Where *all* electrodes should store their artefacts
-output_dir:   /scratch/outputs/EEG_RQA_runs
+output_dir:   /mnt/home/users/tic_163_uma/mpascual/execs/WINDOW_CLASSIFICATION/results
 
 # Paths to the other YAML files
-model_cfg:    model.yaml        # relative paths are fine
-optuna_cfg:   optuna.yaml
+model_cfg:    /mnt/home/users/tic_163_uma/mpascual/execs/WINDOW_CLASSIFICATION/cfgs/model.yaml
+optuna_cfg:   /mnt/home/users/tic_163_uma/mpascual/execs/WINDOW_CLASSIFICATION/cfgs/optuna.yaml
+selector_cfg: /mnt/home/users/tic_163_uma/mpascual/execs/WINDOW_CLASSIFICATION/cfgs/selector.yaml
 
 # Optional: override number of cores
 tuning_jobs:  16                # None → use joblib default

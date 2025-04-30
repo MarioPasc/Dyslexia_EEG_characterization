@@ -3,3 +3,4 @@
 from pyddeeg.classification.optimization.optuna_estimator import OptunaEstimator
 
 OPTUNA_FALLBACK_PATH = "src/pyddeeg/classification/cfgs/optuna_configuration.yaml"
+SELECTOR_FALLBACK_PATH = "src/pyddeeg/classification/cfgs/selector.yaml"

@@ -20,7 +20,10 @@ from joblib import Parallel, delayed, cpu_count
 from tqdm.auto import tqdm
 
 from pyddeeg.classification import EEGDataset, OptunaEstimator
-from pyddeeg.classification.optimization import OPTUNA_FALLBACK_PATH
+from pyddeeg.classification.optimization import (
+    OPTUNA_FALLBACK_PATH,
+    SELECTOR_FALLBACK_PATH,
+)
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -36,6 +39,7 @@ def _optuna_for_window(
     random_state: int,
     win_idx: int,
     optuna_configuration: str | Path | Dict[str, Any] | None = OPTUNA_FALLBACK_PATH,
+    selector_configuration: str | Path = SELECTOR_FALLBACK_PATH,
     storage_dir: str | Path | None = None,
 ) -> Dict[str, Any]:
     """Run Optuna on **one** time‑window and return its ``best_params_`` dict."""
@@ -47,6 +51,7 @@ def _optuna_for_window(
         hyperparameters=hyperparam_cfg,
         dataset=dataset,
         config_yaml=optuna_configuration,
+        selector_cfg_path=selector_configuration,
         random_state=random_state + win_idx,  # perturb seed per window
         storage_dir=storage_dir,
         study_name=study_name,
@@ -135,6 +140,7 @@ def tune_one_electrode_parallel(
     *,
     base_estimator,
     optuna_configuration: str | Path | Dict[str, Any] | None = OPTUNA_FALLBACK_PATH,
+    selector_configuration: str | Path | Dict[str, Any] | None = SELECTOR_FALLBACK_PATH,
     random_state: int = 42,
     storage_dir: str | Path | None = None,
     n_jobs: int | None = None,
@@ -176,6 +182,7 @@ def tune_one_electrode_parallel(
                 win_idx=w,
                 storage_dir=storage_dir,
                 optuna_configuration=optuna_configuration,
+                selector_configuration=selector_configuration,
             )
             for w in range(n_windows)
         )

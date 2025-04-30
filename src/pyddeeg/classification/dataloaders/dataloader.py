@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 from sklearn.model_selection import StratifiedGroupKFold, GroupKFold
 
+
 @dataclass
 class EEGDataset:
     """
@@ -20,6 +21,7 @@ class EEGDataset:
     metadata : dict
         Dictionary containing dataset metadata such as paths, window parameters, and routes.
     """
+
     dd: np.ndarray
     ct: np.ndarray
     cv: Any
@@ -30,7 +32,8 @@ class EEGDataset:
         dataset_root: Path,
         window: str,
         direction: str,
-        random_state: int = 42
+        elec: str,
+        random_state: int = 42,
     ) -> "EEGDataset":
         """
         Load EEG RQA metric data and metadata for a given window and direction.
@@ -58,18 +61,17 @@ class EEGDataset:
         total_ms = centres_ms[-1] + window_ms // 2
 
         import json
-        routes = json.loads((dataset_root / "dataset_index.json").read_text())[window][direction]
 
-        try:
-            cv = StratifiedGroupKFold(n_splits=5, random_state=random_state, shuffle=True)
-            cv_type = "StratifiedGroupKFold"
-        except ImportError:
-            cv = GroupKFold(n_splits=5)
-            cv_type = "GroupKFold"
+        routes = json.loads((dataset_root / "dataset_index.json").read_text())[window][
+            direction
+        ]
 
-        # Load the first electrode's data as an example
-        first_elec = next(iter(routes))
-        pA, pB = routes[first_elec]
+        cv = StratifiedGroupKFold(n_splits=5, random_state=random_state, shuffle=True)
+        cv_type = "StratifiedGroupKFold"
+        if elec not in routes:  # sanity-check
+            raise KeyError(f"Electrode '{elec}' not in routes keys: {list(routes)}")
+
+        pA, pB = routes[elec]
         dd_path, ct_path = (pA, pB) if "DD" in Path(pA).stem.upper() else (pB, pA)
         dd = np.load(dd_path)["metrics"].astype(np.float32)
         ct = np.load(ct_path)["metrics"].astype(np.float32)
@@ -83,6 +85,6 @@ class EEGDataset:
             window_ms=window_ms,
             total_ms=total_ms,
             routes=routes,
-            cv_type=cv_type
+            cv_type=cv_type,
         )
         return EEGDataset(dd=dd, ct=ct, cv=cv, metadata=metadata)

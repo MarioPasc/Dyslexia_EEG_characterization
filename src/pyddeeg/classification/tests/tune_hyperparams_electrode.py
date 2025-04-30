@@ -168,12 +168,15 @@ def main() -> None:  # pragma: no cover
     # ----------------------- load optuna.yaml -------------------------------
     optuna_cfg = cfg["optuna_cfg"]  # just pass the path; OptunaEstimator parses
 
+    # ----------------------- load selector.yaml -------------------------------
+    selector_cfg = cfg["selector_cfg"]  # just pass the path; OptunaEstimator parses
+
     # ----------------------- electrode-specific out dir ---------------------
     run_dir = out_dir_root / f"{elec}_{window}_{direction}"
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # ----------------------- step 1 – load dataset --------------------------
-    dataset = EEGDataset.load(ds_root, window, direction, random_state=seed)
+    dataset = EEGDataset.load(ds_root, window, direction, elec, random_state=seed)
     logger.info("✅ EEGDataset loaded.")
 
     # ----------------------- step 2 – hyper-parameter tuning ---------------
@@ -213,6 +216,7 @@ def main() -> None:  # pragma: no cover
             p["best_params"] for p in results_dir
         ],  # ← list from the tuner
         base_estimator_cls=type(base_estimator),
+        selector_cfg_path=selector_cfg,
         n_jobs_windows=cfg.get("cv_jobs", -1),
     )
     results["cv_indices"] = np.array(results["cv_indices"], dtype=object)

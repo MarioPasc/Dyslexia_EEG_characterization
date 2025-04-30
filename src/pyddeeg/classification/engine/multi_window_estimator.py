@@ -18,14 +18,15 @@ allows **one hyper-parameter configuration per time-window**.
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Sequence, Tuple, Type
+from typing import Any, Dict, List, Sequence, Tuple, Type, Union
+from pathlib import Path
 
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 from sklearn.utils.validation import check_is_fitted
+
+from pyddeeg.classification.pipeline import build_pipeline, load_selector
 
 
 from joblib import Parallel, delayed
@@ -37,33 +38,6 @@ __all__: Sequence[str] = ("MultiWindowEstimator",)
 # -----------------------------------------------------------------------------#
 #                               helper functions                               #
 # -----------------------------------------------------------------------------#
-def _build_pipeline(
-    *, k: int, base_cls: Type[BaseEstimator], model_params: Dict[str, Any]
-) -> Pipeline:
-    """
-    Construct the *per-window* preprocessing / modelling pipeline.
-
-    Parameters
-    ----------
-    k
-        Number of features to keep in the univariate ANOVA selector.
-    base_cls
-        Estimator *class* (e.g. ``HistGradientBoostingClassifier``).
-    model_params
-        Arguments forwarded to :py:meth:`base_cls.set_params`.
-
-    Returns
-    -------
-    pipeline
-        A fully initialised but **un-fitted** scikit-learn Pipeline.
-    """
-    return Pipeline(
-        steps=[
-            ("scale", StandardScaler()),
-            ("selector", SelectKBest(f_classif, k=k)),
-            ("model", base_cls().set_params(**model_params)),
-        ]
-    )
 
 
 def _validate_dims(
@@ -102,14 +76,12 @@ class MultiWindowEstimator(BaseEstimator, ClassifierMixin):
     ----------
     base_cls
         Estimator **class** that supports :py:meth:`predict_proba`.
-    params_per_window
-        ``List[Dict]`` where *each* dictionary contains:
-
-        * ``"k"`` – number of top features to keep after ANOVA F-test.
-        * any other key-value pairs forwarded to
-          ``base_cls().set_params(**params)``.
-
-        *Length must equal the number of windows in the input data.*
+        params_per_window
+            One dict **per window**::
+                {
+                  "model_params":    {...},   # ← tuned clf hyper-params
+                  "selector_params": {...},   # ← tuned feature selector attrs
+                }
 
     Notes
     -----
@@ -125,9 +97,12 @@ class MultiWindowEstimator(BaseEstimator, ClassifierMixin):
         self,
         base_cls: Type[BaseEstimator],
         params_per_window: List[Dict[str, Any]],
+        *,
+        selector_cfg_path: Union[str, Path],
     ) -> None:
         self.base_cls = base_cls
         self.params_per_window = params_per_window
+        self.selector_cfg_path = selector_cfg_path
 
     def fit(
         self,
@@ -141,10 +116,18 @@ class MultiWindowEstimator(BaseEstimator, ClassifierMixin):
         """Fit each window-specific pipeline."""
         _, _, n_windows = _validate_dims(X, self.params_per_window)
 
-        def _fit_one(w: int, params: dict) -> Pipeline:
-            cfg = copy.deepcopy(params)
-            k = int(cfg.pop("k"))
-            pipe = _build_pipeline(k=k, base_cls=self.base_cls, model_params=cfg)
+        def _fit_one(w: int, params: Dict[str, Any]) -> Pipeline:
+            # split the nested dict -------------------------------
+            model_kwargs: Dict[str, Any] = params.get("model_params", {})
+            sel_kwargs: Dict[str, Any] = params.get("selector_params", {})
+
+            # load *template* selector from YAML, then overwrite with Optuna best
+            sel_template, fixed = load_selector(self.selector_cfg_path, trial=None)
+            selector_cls = type(sel_template)
+            selector = selector_cls(**{**fixed, **sel_kwargs})
+
+            model = self.base_cls().set_params(**model_kwargs)
+            pipe = build_pipeline(selector=selector, model=model)
             pipe.fit(X[:, :, w], y)
             return pipe
 

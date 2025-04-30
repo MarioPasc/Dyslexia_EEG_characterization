@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Sequence, Tuple
 
 import warnings
 
-import mne
+from pathlib import Path
 import numpy as np
 from mne.stats import permutation_cluster_test
 from sklearn.metrics import average_precision_score, roc_auc_score
@@ -51,6 +51,7 @@ def evaluate_frozen_models(
     dataset: EEGDataset,
     params_per_window: list[dict],
     base_estimator_cls,
+    selector_cfg_path: str | Path,
     n_jobs_windows: int = 1,
 ) -> Dict[str, Any]:
     """
@@ -100,6 +101,7 @@ def evaluate_frozen_models(
         est = MultiWindowEstimator(
             base_cls=base_estimator_cls,
             params_per_window=params_per_window,
+            selector_cfg_path=selector_cfg_path,
         ).fit(
             X[train_idx],
             y[train_idx],
@@ -119,6 +121,7 @@ def evaluate_frozen_models(
     full_est = MultiWindowEstimator(
         base_cls=base_estimator_cls,
         params_per_window=params_per_window,
+        selector_cfg_path=selector_cfg_path,
     ).fit(X, y, n_jobs=n_jobs_windows, show_progress=False)
 
     selected_features = np.vstack(

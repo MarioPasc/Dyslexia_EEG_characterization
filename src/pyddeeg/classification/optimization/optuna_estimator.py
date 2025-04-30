@@ -25,7 +25,7 @@ from optuna.storages._rdb.models import BaseModel
 
 from sklearn.base import BaseEstimator, clone
 from sklearn.feature_selection import SelectKBest, f_classif
-from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import cross_val_score
 
@@ -34,6 +34,11 @@ from pyddeeg.classification.optimization.utils import (
     load_optuna_config,
 )
 from pyddeeg.classification import EEGDataset
+from pyddeeg.classification.pipeline import (
+    build_pipeline,
+    resolve_dotted,
+    load_selector,
+)
 
 __all__: Tuple[str, ...] = ("OptunaEstimator",)
 
@@ -66,10 +71,10 @@ class OptunaEstimator(BaseEstimator):
         dataset: EEGDataset,
         *,
         config_yaml: str | Path | Dict[str, Any] | None = None,
+        selector_cfg_path: str | Path = "",
         storage_dir: str | Path | None = None,
         n_trials: int | None = None,
         random_state: int | None = None,
-        k_range: Tuple[int, int] = (5, 15),
         study_name: str | None = None,
     ) -> None:
 
@@ -77,6 +82,7 @@ class OptunaEstimator(BaseEstimator):
         # Parse YAML and override defaults                                   #
         # ------------------------------------------------------------------ #
         cfg = load_optuna_config(config_yaml or {})  # empty dict if None
+        self.selector_cfg_path = selector_cfg_path
 
         self.n_trials = n_trials or cfg["n_trials"]
         self.random_state = random_state or cfg["random_state"]
@@ -101,8 +107,19 @@ class OptunaEstimator(BaseEstimator):
         self.hyperparameters = hyperparameters
         self.dataset = dataset
         self.random_state = random_state
-        self.k_range = k_range
         self.study_name = study_name
+
+        self.selector_cfg: dict = cfg["selector"]
+        self.selector_cls: type = resolve_dotted(self.selector_cfg["class"])
+        self.selector_space: dict = self.selector_cfg.get("params", {})
+
+        self.cv = (
+            StratifiedGroupKFold(
+                n_splits=self.dataset.cv.get_n_splits(),
+                shuffle=True,
+                random_state=self.random_state,
+            ),
+        )  # fresh *inner* splitter → no leakage
 
     # ---------------------------------------------------------------------
     #                   Optuna objective & helper methods
@@ -118,24 +135,17 @@ class OptunaEstimator(BaseEstimator):
                 message="invalid value encountered in divide",
             )
 
-            params = suggest_from_config(trial, self.hyperparameters)
-            k = trial.suggest_int("k", self.k_range[0], self.k_range[1])
+            model_params = suggest_from_config(trial, self.hyperparameters)
+            selector, selector_params = load_selector(self.selector_cfg_path, trial)
 
-            selector = SelectKBest(f_classif, k=k)
-            model = clone(self.base_estimator).set_params(**params)
-            pipeline = Pipeline(
-                [
-                    ("scale", StandardScaler()),
-                    ("selector", selector),
-                    ("model", model),
-                ]
-            )
+            model = clone(self.base_estimator).set_params(**model_params)
+            pipeline = build_pipeline(selector=selector, model=model)
 
             scores = cross_val_score(
                 pipeline,
                 X,
                 y,
-                cv=self.dataset.cv,
+                cv=self.cv,
                 scoring=self.scoring,
                 n_jobs=-1,
                 groups=np.arange(len(y)),
@@ -210,13 +220,30 @@ class OptunaEstimator(BaseEstimator):
             study.optimize(lambda t: self._objective(t, X, y), n_trials=self.n_trials)
 
         best = study.best_params.copy()
-        k = best.pop("k")
-        selector = SelectKBest(f_classif, k=k)
-        model = clone(self.base_estimator).set_params(**best)
-        self.pipeline_ = Pipeline([("selector", selector), ("model", model)])
+
+        # ---- 1) split the winning parameter set ------------------------- #
+        best_all = study.best_params.copy()
+
+        model_param_keys = set(self.hyperparameters.keys())
+        model_params_best = {k: v for k, v in best_all.items() if k in model_param_keys}
+        selector_params_best = {
+            k: v for k, v in best_all.items() if k not in model_param_keys
+        }
+
+        # ---- 2) re-instantiate selector *with its own best params* ------- #
+        selector_cls, _ = load_selector(self.selector_cfg_path, trial=None)
+        selector_best = selector_cls.__class__(**selector_params_best)
+
+        model_best = clone(self.base_estimator).set_params(**model_params_best)
+        self.pipeline_ = build_pipeline(selector=selector_best, model=model_best)
         self.pipeline_.fit(X, y)
 
-        self.best_params_ = {"k": k, **best}
+        # ---- 3) expose as a tidy, two-level dict ------------------------ #
+        self.best_params_ = {
+            "model_params": model_params_best,
+            "selector_params": selector_params_best,
+        }
+
         self.study_ = study
         bt = study.best_trial.user_attrs
         self.best_trial_performance = {
