@@ -214,8 +214,6 @@ class OptunaEstimator(BaseEstimator):
 
             study.optimize(lambda t: self._objective(t, X, y), n_trials=self.n_trials)
 
-        best = study.best_params.copy()
-
         # ---- 1) split the winning parameter set ------------------------- #
         best_all = study.best_params.copy()
 
@@ -226,8 +224,8 @@ class OptunaEstimator(BaseEstimator):
         }
 
         # ---- 2) re-instantiate selector *with its own best params* ------- #
-        selector_cls, _ = load_selector(self.selector_cfg_path, trial=None)
-        selector_best = selector_cls.__class__(**selector_params_best)
+        selector_tmp, _ = load_selector(self.selector_cfg_path, trial=None)
+        selector_best = type(selector_tmp)(**selector_params_best)
 
         model_best = clone(self.base_estimator).set_params(**model_params_best)
         self.pipeline_ = build_pipeline(selector=selector_best, model=model_best)
