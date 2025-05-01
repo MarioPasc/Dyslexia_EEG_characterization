@@ -30,11 +30,7 @@ from pyddeeg.classification import logger
 from pyddeeg.utils.postprocessing.reorganize_per_window_results import (
     reorganization_pipeline,
 )
-from pyddeeg.classification.optimization.tuner import tune_one_electrode_parallel
-from pyddeeg.classification.engine.trainer import (
-    evaluate_frozen_models,
-    permutation_test_decision_scores,
-)
+from pyddeeg.classification.engine.trainer import nested_evaluate
 from pyddeeg.classification.utils.report import (
     print_welcome_banner,
     print_dataset_summary,
@@ -186,68 +182,22 @@ def main() -> None:  # pragma: no cover
     # ----------------------- step 1 – load dataset --------------------------
     dataset = EEGDataset.load(ds_root, window, direction, elec, random_state=seed)
     print_dataset_summary(dataset)
+    # ----------------------- step 3 – outer-CV evaluation -------------------
 
-    # ----------------------- step 2 – hyper-parameter tuning ---------------
-    # Contains two entries per window, the first one being the "best_params",
-    # and the second one, being the "best_trial_performance".
-    results_dir = tune_one_electrode_parallel(
-        elec=elec,
+    results = nested_evaluate(
         dataset=dataset,
         hyperparam_cfg=hyperparams,
         base_estimator=base_estimator,
-        optuna_configuration=optuna_cfg,
-        selector_configuration=selector_cfg,
-        random_state=seed,
-        n_jobs=int(threads),
-        storage_dir=run_dir / "optuna",
-    )
-    # save best params to disk
-    (Path(run_dir) / "best_params.json").write_text(
-        json.dumps(
-            [p["best_params"] for p in results_dir],
-            indent=2,
-        )
-    )
-    # save best performance of the best trial per window to disk
-    (Path(run_dir) / "perf.json").write_text(
-        json.dumps(
-            [p["performance"] for p in results_dir],
-            indent=2,
-        )
-    )
-    logger.info("🔧 Tuning complete & parameters saved.")
-    print_tuning_summary(results_dir)
-    # ----------------------- step 3 – outer-CV evaluation -------------------
-
-    results = evaluate_frozen_models(
-        dataset=dataset,
-        params_per_window=[
-            p["best_params"] for p in results_dir
-        ],  # ← list from the tuner
-        base_estimator_cls=type(base_estimator),
         selector_cfg_path=selector_cfg,
+        optuna_cfg=optuna_cfg,
+        random_state=seed,
+        n_jobs_tuner=threads,
         n_jobs_windows=cfg.get("cv_jobs", -1),
+        storage_dir=run_dir,
     )
+
     results["cv_indices"] = np.array(results["cv_indices"], dtype=object)
     np.savez_compressed(run_dir / "cv_results.npz", **results)
-    print_cv_results_summary(results)
-
-    """ To load these results:
-    with np.load(run_dir / "cv_results.npz", allow_pickle=True) as data:
-    cv_indices = data["cv_indices"].tolist()  # back to Python list of (train_idx, test_idx)
-    """
-
-    # ----------------------- step 4 – cluster-based permutation test ---------
-    perm_results = permutation_test_decision_scores(
-        decision_scores=results["decision_scores"],
-        labels=results["labels"],
-        n_permutations=10000,
-        tail=1,
-        seed=seed,
-    )
-    # save permutation-test outputs (T_obs, clusters, p_values, H0)
-    np.savez_compressed(run_dir / "permutation_results.npz", **perm_results)
-    print_permutation_test_summary(perm_results)
 
     logger.info("🎉 Job done.")
 
