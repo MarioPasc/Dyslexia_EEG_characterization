@@ -99,10 +99,12 @@ class MultiWindowEstimator(BaseEstimator, ClassifierMixin):
         params_per_window: List[Dict[str, Any]],
         *,
         selector_cfg_path: Union[str, Path],
+        random_state: int | None = None,
     ) -> None:
         self.base_cls = base_cls
         self.params_per_window = params_per_window
         self.selector_cfg_path = selector_cfg_path
+        self.random_state = random_state
 
     def fit(
         self,
@@ -125,6 +127,12 @@ class MultiWindowEstimator(BaseEstimator, ClassifierMixin):
             sel_template, fixed = load_selector(self.selector_cfg_path, trial=None)
             selector_cls = type(sel_template)
             selector = selector_cls(**{**fixed, **sel_kwargs})
+
+            if (
+                self.random_state is not None
+                and "random_state" in self.base_cls().get_params()
+            ):
+                model_kwargs.setdefault("random_state", self.random_state)
 
             model = self.base_cls().set_params(**model_kwargs)
             pipe = build_pipeline(selector=selector, model=model)

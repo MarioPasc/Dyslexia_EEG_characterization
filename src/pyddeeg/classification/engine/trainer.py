@@ -1,179 +1,215 @@
 # -*- coding: utf-8 -*-
 """
-trainer.py
-==========
-
-End-to-end **evaluation** of window-wise models:
-
-*   re-trains the tuned hyper-parameters on *outer* Group-CV splits
-    (no data leakage);
-*   computes ROC-AUC & PR-AUC *per fold × window*;
-*   gathers decision-scores, feature-selection masks and CV indices
-    for downstream statistics or visualisation.
-
-The file depends only on:
-
-* ``MultiWindowEstimator`` – our custom SlidingEstimator clone;
-* ``pyddeeg.classification.dataloaders.EEGDataset`` – wraps EEG tensors
-  and a ready-to-use ``StratifiedGroupKFold`` splitter.
+trainer.py – nested k × h CV with on-the-fly permutation test
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 """
 
 from __future__ import annotations
-
+from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
-
 import warnings
 
-from pathlib import Path
 import numpy as np
+from tqdm.auto import tqdm
+from sklearn.metrics import roc_auc_score, average_precision_score
 from mne.stats import permutation_cluster_test
-from sklearn.metrics import average_precision_score, roc_auc_score
 
-from pyddeeg import RQA_METRICS
+from pyddeeg import RQA_METRICS  # ▸ list[str] with metric names
+from pyddeeg.classification.optimization.tuner import tune_one_electrode_parallel
 from pyddeeg.classification.dataloaders import EEGDataset
 from pyddeeg.classification import MultiWindowEstimator
 
-from tqdm.auto import tqdm
-
-from joblib import Parallel, delayed
-
-__all__: Sequence[str] = (
-    "evaluate_frozen_models",
-    "permutation_test_decision_scores",
-)
+__all__: Sequence[str] = ("nested_evaluate",)
 
 
-# -----------------------------------------------------------------------------#
-#                           cross-validated evaluation                         #
-# -----------------------------------------------------------------------------#
-def evaluate_frozen_models(
-    *,
-    dataset: EEGDataset,
-    params_per_window: list[dict],
-    base_estimator_cls,
-    selector_cfg_path: str | Path,
-    n_jobs_windows: int = 1,
-) -> Dict[str, Any]:
+# ------------------------------------------------------------------ #
+#                          helper utilities                          #
+# ------------------------------------------------------------------ #
+def _slice_tensors(
+    dd: np.ndarray,
+    ct: np.ndarray,
+    global_idx: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Return dd/ct slices given *global* subject indices."""
+    n_dd = len(dd)
+    dd_idx = global_idx[global_idx < n_dd]
+    ct_idx = global_idx[global_idx >= n_dd] - n_dd
+    return dd[dd_idx], ct[ct_idx]
+
+
+def _selector_stats(pipe) -> Dict[str, Any]:
     """
-    Re-train the tuned window-wise models on the outer Group-CV & collect metrics.
-
-    Parameters
-    ----------
-    elec
-        Electrode label (used only for informative channel names).
-    dataset
-        Wrapper with ``dd``, ``ct`` tensors and a ready Group-CV splitter.
-    params_per_window
-        List of hyper-param dicts (see :class:`MultiWindowEstimator` docs).
-    base_estimator_cls
-        Estimator class used during tuning (e.g. ``LogisticRegression``).
+    Extract *scores*, *p-values* and *boolean mask* from a fitted pipeline.
 
     Returns
     -------
-    results : dict
-        Keys
-        ----
-        decision_scores : ndarray (subjects × windows)
-        labels          : ndarray (subjects,)
-        fold_auc        : ndarray (n_folds × 2 × windows)  – [ROC, PR] AUC
-        selected_features
-        params_per_window
-        cv_indices      : list[(train_idx, test_idx)]
-        t_centres_ms    : optional 1-D array from dataset metadata
+    dict with keys ``scores``, ``p_values``, ``mask``
     """
-    # --- prepare data & CV ------------------------------------------ #
-    X = np.concatenate([dataset.dd, dataset.ct])  # (N, metrics, windows)
-    y = np.concatenate([np.ones(len(dataset.dd)), np.zeros(len(dataset.ct))])
-    groups = np.arange(len(y))
-    cv = dataset.cv
-
-    n_subjects, _, n_windows = X.shape
-    decision_scores = np.full((n_subjects, n_windows), np.nan)
-    fold_auc = np.empty((cv.get_n_splits(), 2, n_windows))
-
-    splits = list(cv.split(X, y, groups))
-
-    # --- iterate folds with tqdm ------------------------------------ #
-    for f_idx, (train_idx, test_idx) in enumerate(
-        tqdm(splits, desc="Folds", unit="fold")
-    ):
-        # fit per‐window pipelines in parallel, showing a bar "Fold f_idx"
-        est = MultiWindowEstimator(
-            base_cls=base_estimator_cls,
-            params_per_window=params_per_window,
-            selector_cfg_path=selector_cfg_path,
-        ).fit(
-            X[train_idx],
-            y[train_idx],
-            n_jobs=n_jobs_windows,
-            show_progress=True,
-            desc=f"Fold {f_idx}",
-        )
-
-        proba = est.predict_proba(X[test_idx])[:, :, 1]  # class 1 == DD
-        # compute ROC-AUC & PR-AUC per window
-        for w in range(n_windows):
-            fold_auc[f_idx, 0, w] = roc_auc_score(y[test_idx], proba[:, w])
-            fold_auc[f_idx, 1, w] = average_precision_score(y[test_idx], proba[:, w])
-        decision_scores[test_idx] = proba
-
-    # --- full data fit for feature masks --------------------------- #
-    full_est = MultiWindowEstimator(
-        base_cls=base_estimator_cls,
-        params_per_window=params_per_window,
-        selector_cfg_path=selector_cfg_path,
-    ).fit(X, y, n_jobs=n_jobs_windows, show_progress=False)
-
-    selected_features = np.vstack(
-        [pipe.named_steps["selector"].get_support() for pipe in full_est.estimators_]
-    )
-
-    return {
-        "decision_scores": decision_scores,
-        "labels": y,
-        "fold_auc": fold_auc,
-        "selected_features": selected_features,
-        "params_per_window": params_per_window,
-        "cv_indices": splits,
-        "t_centres_ms": dataset.metadata.get("t_centres_ms"),
-    }
+    sel = pipe.named_steps["selector"]
+    # SelectKBest exposes .scores_ / .pvalues_.  Fallback to None if absent.
+    scores = getattr(sel, "scores_", None)
+    p_vals = getattr(sel, "pvalues_", None)
+    mask = sel.get_support()
+    return dict(scores=scores, p_values=p_vals, mask=mask)
 
 
-# -----------------------------------------------------------------------------#
-#                      cluster-based permutation testing                        #
-# -----------------------------------------------------------------------------#
-def permutation_test_decision_scores(
-    decision_scores: np.ndarray,
-    labels: np.ndarray,
+# ------------------------------------------------------------------ #
+#                           public driver                            #
+# ------------------------------------------------------------------ #
+def nested_evaluate(
     *,
-    n_permutations: int = 5_000,
-    tail: int = 1,
-    seed: int | None = None,
-    **mne_kwargs,
+    dataset: EEGDataset,
+    hyperparam_cfg: Dict[str, Dict[str, Any]],
+    base_estimator,
+    selector_cfg_path: str | Path,
+    optuna_configuration: str | Path | Dict[str, Any] | None = None,
+    random_state: int = 42,
+    n_jobs_tuner: int = 1,
+    n_jobs_windows: int = 1,
+    storage_dir: str | Path | None = None,
+    n_perm: int = 10_000,
 ) -> Dict[str, Any]:
     """
-    Run a Maris–Oostenveld cluster permutation on window-wise decision scores.
+    End-to-end k × h nested CV **plus** cluster-based permutation test.
 
-    Notes
-    -----
-    Forward any keyword arguments to
-    :pyfunc:`mne.stats.permutation_cluster_test`.
+    Parameters
+    ----------
+    dataset
+        Loader object already containing outer / inner folds.
+    hyperparam_cfg
+        Search-space for Optuna.
+    base_estimator
+        Instantiated sklearn classifier (e.g. ``LogisticRegression()``).
+    selector_cfg_path
+        YAML describing the feature selector.
+    n_perm
+        Number of permutations for `mne.stats.permutation_cluster_test`.
+
+    Returns
+    -------
+    dict
+        * decision_scores        : (subjects × windows) float
+        * labels                 : (subjects,) int
+        * fold_auc               : (k × 2 × windows) float  – ROC / PR
+        * params_per_outer       : list[k][windows]  – tuned params
+        * selector_stats         : dict with keys ``scores``, ``p_values``,
+                                   ``mask`` (each: windows × n_features)
+        * perm_test              : dict from ``permutation_cluster_test``
+        * outer_indices          : list[(train_idx, test_idx)]
     """
-    dd_scores = decision_scores[labels == 1]
-    ct_scores = decision_scores[labels == 0]
+    dd, ct = dataset.dd, dataset.ct
+    X_full = np.concatenate([dd, ct])
+    y = np.concatenate([np.ones(len(dd)), np.zeros(len(ct))])
+    n_subjects, _, n_windows = X_full.shape
+    k = len(dataset.outer_splits)
 
-    if dd_scores.size == 0 or ct_scores.size == 0:  # pragma: no cover
-        raise ValueError("Both classes need at least one subject.")
+    decision_scores = np.full((n_subjects, n_windows), np.nan)
+    fold_auc = np.empty((k, 2, n_windows))
+    params_per_outer: List[List[Dict[str, Any]]] = []
 
+    groups = np.arange(len(y))  # unique group per subject
+    outer_iter = enumerate(dataset.outer_splits)
+
+    # helper: convert global → outer-local indices
+    def _remap_to_outer(indices, mapping):
+        """Return indices relative to ``tr_idx``."""
+        return np.asarray([mapping[x] for x in indices], dtype=int)
+
+    # ------------------------------------------------------------ #
+    #    allocate selector diagnostics *per outer fold*            #
+    # ------------------------------------------------------------ #
+    n_feat = X_full.shape[1]  # RQA metrics
+    selector_scores = np.full((k, n_windows, n_feat), np.nan)
+    selector_pvals = np.full_like(selector_scores, np.nan, dtype=float)
+    selector_masks = np.zeros((k, n_windows, n_feat), dtype=bool)
+
+    # ------------------------------------------------------------ #
+    #                    outer-loop cross-validation               #
+    # ------------------------------------------------------------ #
+
+    for i, (tr_idx, te_idx) in outer_iter:
+
+        X_tr, y_tr = X_full[tr_idx], y[tr_idx]
+        groups_tr = groups[tr_idx]
+
+        # ---------- build inner-CV list with *relative* indices ------------- #
+        lookup = {g: j for j, g in enumerate(tr_idx)}  # global → local map
+        inner_rel = [
+            (_remap_to_outer(tr, lookup), _remap_to_outer(val, lookup))
+            for tr, val in dataset.inner_splits[i]
+        ]
+
+        # ---------- per-window Optuna tuning -------------------------------- #
+        tuning = tune_one_electrode_parallel(
+            X=X_tr,
+            y=y_tr,
+            groups=groups_tr,
+            inner_splits=inner_rel,  # ✓ now aligned with X_tr
+            metadata={**dataset.metadata, "elec": dataset.metadata.get("elec", "T7")},
+            hyperparam_cfg=hyperparam_cfg,
+            base_estimator=base_estimator,
+            n_jobs=n_jobs_tuner,
+            random_state=random_state,
+            selector_cfg=selector_cfg_path,
+            storage_dir=storage_dir,
+        )
+        best_params = [t["best_params"] for t in tuning]
+        params_per_outer.append(best_params)
+
+        # ------------------- re-train & test ---------------------- #
+        est = MultiWindowEstimator(
+            base_cls=type(base_estimator),
+            params_per_window=best_params,
+            selector_cfg_path=selector_cfg_path,
+            random_state=random_state,
+        ).fit(
+            X_full[tr_idx],
+            y[tr_idx],
+            n_jobs=n_jobs_windows,
+            show_progress=False,
+        )
+        proba = est.predict_proba(X_full[te_idx])[:, :, 1]
+        decision_scores[te_idx] = proba
+
+        for w in range(n_windows):
+            fold_auc[i, 0, w] = roc_auc_score(y[te_idx], proba[:, w])
+            fold_auc[i, 1, w] = average_precision_score(y[te_idx], proba[:, w])
+
+        # ------------------------------------------------------------------- #
+        # NEW —— harvest selector statistics for this fold & all windows      #
+        # ------------------------------------------------------------------- #
+        sel_stats_fold = [_selector_stats(pipe) for pipe in est.estimators_]
+        selector_scores[i] = np.vstack([s["scores"] for s in sel_stats_fold])
+        selector_pvals[i] = np.vstack([s["p_values"] for s in sel_stats_fold])
+        selector_masks[i] = np.vstack([s["mask"] for s in sel_stats_fold])
+
+    # ------------------------------------------------------------ #
+    #                 permutation-cluster statistics               #
+    # ------------------------------------------------------------ #
+    dd_scores = decision_scores[y == 1]
+    ct_scores = decision_scores[y == 0]
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=RuntimeWarning)
         T_obs, clusters, p_vals, H0 = permutation_cluster_test(
             [dd_scores, ct_scores],
-            tail=tail,
-            n_permutations=n_permutations,
+            tail=1,
+            n_permutations=n_perm,
             n_jobs=1,
-            seed=seed,
-            **mne_kwargs,
+            seed=random_state,
         )
+    perm_test = dict(T_obs=T_obs, clusters=clusters, p_values=p_vals, H0=H0)
 
-    return {"T_obs": T_obs, "clusters": clusters, "p_values": p_vals, "H0": H0}
+    return dict(
+        decision_scores=decision_scores,
+        labels=y,
+        fold_auc=fold_auc,
+        params_per_outer=params_per_outer,
+        selector_stats=dict(
+            names=np.asarray(RQA_METRICS),
+            scores=selector_scores,  # shape (fold, window, feature)
+            p_values=selector_pvals,
+            mask=selector_masks,
+        ),
+        perm_test=perm_test,
+        outer_indices=dataset.outer_splits,
+    )
