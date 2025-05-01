@@ -35,9 +35,15 @@ def _optuna_for_window(
     storage_dir: Path | str | None = None,
 ):
     study_name = f"{metadata['direction']}_{metadata['window_ms']}ms_win{win_idx:03d}"
-    file_storage = (
-        Path(storage_dir) / f"sqlite:///{study_name}.db" if storage_dir else None
-    )
+    # build the actual DB *path* and then the proper SQLAlchemy URL
+    if storage_dir:
+        db_path = Path(storage_dir) / f"{study_name}.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        # For an absolute path, prepend three slashes before the leading "/"
+        storage_url = f"sqlite:///{db_path.as_posix()}"
+    else:
+        storage_url = None
+
     opt = OptunaEstimator(
         base_estimator=base_estimator,
         hyperparameters=hyperparam_cfg,
@@ -46,7 +52,7 @@ def _optuna_for_window(
         n_trials=optuna_cfg.get("n_trials", 50) if isinstance(optuna_cfg, dict) else 50,
         random_state=random_state + win_idx,
         study_name=study_name,
-        storage_dir=file_storage,
+        storage_url=storage_url,
     )
     opt.fit(Xw, y, groups)
     return {"best_params": opt.best_params_}

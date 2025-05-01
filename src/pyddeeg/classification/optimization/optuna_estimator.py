@@ -37,7 +37,7 @@ class OptunaEstimator(BaseEstimator):
         n_trials: int = 50,
         random_state: int = 42,
         study_name: str | None = None,
-        storage_dir: str | Path | None = None,
+        storage_url: str | Path | None = None,
     ) -> None:
         self.base_estimator = base_estimator
         self.hyperparameters = hyperparameters
@@ -46,7 +46,7 @@ class OptunaEstimator(BaseEstimator):
         self.n_trials = n_trials
         self.random_state = random_state
         self.study_name = study_name
-        self.storage_dir = str(storage_dir) if storage_dir else None
+        self.storage_url = str(storage_url) if storage_url else None
 
         # default Optuna config
         cfg = load_optuna_config({})
@@ -79,7 +79,7 @@ class OptunaEstimator(BaseEstimator):
             direction="maximize",
             sampler=self._sampler,
             pruner=self._pruner,
-            storage=self.storage_dir,
+            storage=self.storage_url,
             study_name=self.study_name,
             load_if_exists=True,
         )
