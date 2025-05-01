@@ -195,8 +195,16 @@ def main() -> None:  # pragma: no cover
         n_jobs_windows=cfg.get("cv_jobs", -1),
         storage_dir=run_dir,
     )
+    # 1) turn outer_indices (list of 2-tuples of arrays) into dtype=object
+    results["outer_indices"] = np.array(results["outer_indices"], dtype=object)
 
+    # 2) same for the perm_test clusters
+    clusters = results["perm_test"]["clusters"]
+    results["perm_test"]["clusters"] = np.array(clusters, dtype=object)
+
+    # now save
     np.savez_compressed(run_dir / "cv_results.npz", **results)
+
     print_cv_results_summary(results)
     logger.info("🎉 Job done.")
 
