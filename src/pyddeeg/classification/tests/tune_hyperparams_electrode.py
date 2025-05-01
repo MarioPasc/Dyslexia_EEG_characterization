@@ -198,7 +198,7 @@ def main() -> None:  # pragma: no cover
 
     results["cv_indices"] = np.array(results["cv_indices"], dtype=object)
     np.savez_compressed(run_dir / "cv_results.npz", **results)
-
+    print_cv_results_summary(results)
     logger.info("🎉 Job done.")
 
 
