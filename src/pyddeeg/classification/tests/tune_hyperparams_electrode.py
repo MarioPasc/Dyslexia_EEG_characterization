@@ -189,7 +189,7 @@ def main() -> None:  # pragma: no cover
         hyperparam_cfg=hyperparams,
         base_estimator=base_estimator,
         selector_cfg_path=selector_cfg,
-        optuna_cfg=optuna_cfg,
+        optuna_configuration=optuna_cfg,
         random_state=seed,
         n_jobs_tuner=threads,
         n_jobs_windows=cfg.get("cv_jobs", -1),
