@@ -46,7 +46,7 @@ class OptunaEstimator(BaseEstimator):
         self.n_trials = n_trials
         self.random_state = random_state
         self.study_name = study_name
-        self.storage_dir = Path(storage_dir) if storage_dir else None
+        self.storage_dir = str(storage_dir) if storage_dir else None
 
         # default Optuna config
         cfg = load_optuna_config({})
@@ -79,11 +79,7 @@ class OptunaEstimator(BaseEstimator):
             direction="maximize",
             sampler=self._sampler,
             pruner=self._pruner,
-            storage=(
-                f"sqlite:///{self.storage_dir / 'optuna.db'}"
-                if self.storage_dir
-                else None
-            ),
+            storage=self.storage_dir,
             study_name=self.study_name,
             load_if_exists=True,
         )

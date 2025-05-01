@@ -32,10 +32,12 @@ def _optuna_for_window(
     win_idx: int,
     optuna_cfg=OPTUNA_FALLBACK_PATH,
     selector_cfg=SELECTOR_FALLBACK_PATH,
-    storage_dir: Path | None = None,
+    storage_dir: Path | str | None = None,
 ):
     study_name = f"{metadata['direction']}_{metadata['window_ms']}ms_win{win_idx:03d}"
-
+    file_storage = (
+        Path(storage_dir) / f"sqlite:///{study_name}.db" if storage_dir else None
+    )
     opt = OptunaEstimator(
         base_estimator=base_estimator,
         hyperparameters=hyperparam_cfg,
@@ -44,7 +46,7 @@ def _optuna_for_window(
         n_trials=optuna_cfg.get("n_trials", 50) if isinstance(optuna_cfg, dict) else 50,
         random_state=random_state + win_idx,
         study_name=study_name,
-        storage_dir=storage_dir,
+        storage_dir=file_storage,
     )
     opt.fit(Xw, y, groups)
     return {"best_params": opt.best_params_}
