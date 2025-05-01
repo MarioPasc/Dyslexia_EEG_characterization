@@ -150,6 +150,7 @@ def nested_evaluate(
             base_estimator=base_estimator,
             n_jobs=n_jobs_tuner,
             random_state=random_state,
+            optuna_cfg=optuna_configuration,
             selector_cfg=selector_cfg_path,
             storage_dir=storage_dir,
         )

@@ -225,57 +225,118 @@ def print_tuning_summary(tuning_results: Sequence[Dict[str, Any]]) -> None:
 # --------------------------------------------------------------------------- #
 def print_cv_results_summary(cv_results: Dict[str, Any]) -> None:
     """
-    Summarise nested CV output from ``evaluate_frozen_models`` (trainer.py):
+    Summarise nested CV output from `nested_evaluate`.
 
     Expected keys
     -------------
-    fold_auc : ndarray  (n_folds × 2 × n_windows)  – [ROC, PR] AUC
-    decision_scores : ndarray (subjects × n_windows)
-    labels : ndarray (subjects,)
-    selected_features : ndarray (n_windows × n_features)
+    decision_scores    : ndarray, shape (n_subjects, n_windows)
+    labels             : ndarray, shape (n_subjects,)
+    fold_auc           : ndarray, shape (n_folds, 2, n_windows)  # [ROC, PR]
+    params_per_outer   : list of length n_folds, each a list of length n_windows of dicts
+    selector_stats     : dict with keys
+                         - names: ndarray (n_features,)
+                         - scores: ndarray (n_folds, n_windows, n_features)  # selection freq
+                         - mask  : ndarray (n_folds, n_windows, n_features)  # boolean
+    perm_test          : dict passed to `print_permutation_test_summary`
+    outer_indices      : list of (train_idx, test_idx)
     """
-    if "fold_auc" not in cv_results:
-        print("🏁  CV summary: 'fold_auc' missing.")
-        logger.warning("CV summary: key 'fold_auc' not present.")
-        return
+    # 1) basic shapes
+    ds, ls = cv_results["decision_scores"], cv_results["labels"]
+    fa = np.asarray(cv_results["fold_auc"])
+    n_subjects, n_windows = ds.shape
+    n_folds = fa.shape[0]
+    print(f"🏁  CV results summary")
+    print(f"      • Subjects  : {n_subjects}")
+    print(f"      • Windows   : {n_windows}")
+    print(f"      • Folds     : {n_folds}")
 
-    fold_auc = np.asarray(cv_results["fold_auc"])
-    roc_by_win = fold_auc[:, 0, :]  # (folds, windows)
-    pr_by_win = fold_auc[:, 1, :]
+    # 2) overall ROC & PR
+    roc = fa[:, 0, :]  # (folds, windows)
+    pr = fa[:, 1, :]
+    mean_roc_w = np.nanmean(roc, axis=0)
+    std_roc_w = np.nanstd(roc, axis=0)
+    mean_pr_w = np.nanmean(pr, axis=0)
+    std_pr_w = np.nanstd(pr, axis=0)
+    global_roc = np.nanmean(mean_roc_w)
+    global_pr = np.nanmean(mean_pr_w)
 
-    mean_roc_per_win = np.nanmean(roc_by_win, axis=0)
-    mean_pr_per_win = np.nanmean(pr_by_win, axis=0)
+    print(f"      • Global ROC-AUC : {global_roc:.4f}")
+    print(f"      • Global PR-AUC  : {global_pr:.4f}")
 
-    overall_roc = np.nanmean(mean_roc_per_win)
-    overall_pr = np.nanmean(mean_pr_per_win)
-
-    best_idx = int(np.nanargmax(mean_roc_per_win))
-    best_auc = mean_roc_per_win[best_idx]
-
-    print("🏁  Outer-CV results")
-    print(f"      • Mean ROC-AUC across folds × windows .... {overall_roc:.4f}")
-    print(f"      • Mean PR-AUC  across folds × windows .... {overall_pr:.4f}")
+    # best windows
+    best_roc_idx = int(np.nanargmax(mean_roc_w))
+    best_pr_idx = int(np.nanargmax(mean_pr_w))
     print(
-        f"      • Best window (by ROC-AUC) ............... #{best_idx:02}  (ROC = {best_auc:.4f})"
+        f"      • Best window by ROC : #{best_roc_idx:02}  ({mean_roc_w[best_roc_idx]:.4f} ± {std_roc_w[best_roc_idx]:.4f})"
+    )
+    print(
+        f"      • Best window by PR  : #{best_pr_idx:02}  ({mean_pr_w[best_pr_idx]:.4f} ± {std_pr_w[best_pr_idx]:.4f})"
     )
 
-    logger.info(
-        "CV: mean ROC-AUC %.4f (best window %s → %.4f) – mean PR-AUC %.4f",
-        overall_roc,
-        best_idx,
-        best_auc,
-        overall_pr,
-    )
-
-    # ---- optional extras --------------------------------------------------
-    n_features = cv_results.get("selected_features", np.empty((0, 0))).shape[-1]
-    if n_features:
-        mean_selected = cv_results["selected_features"].mean(axis=0)
-        prop_sel = 100 * np.mean(mean_selected)
+    # 3) per-window summary table
+    print("\n      • Per-window performance:")
+    for w in range(n_windows):
         print(
-            f"      • Feature-selection ................. {prop_sel:.1f}% metrics kept (avg.)"
+            f"         - Win #{w:02}: ROC = {mean_roc_w[w]:.4f} ± {std_roc_w[w]:.4f}, "
+            f"PR = {mean_pr_w[w]:.4f} ± {std_pr_w[w]:.4f}"
         )
-        logger.info("Feature selection: %.2f %% metrics kept (averaged)", prop_sel)
+
+    # logging
+    logger.info(
+        "CV global ROC = %.4f, PR = %.4f; best ROC win=%s (%.4f±%.4f), best PR win=%s (%.4f±%.4f)",
+        global_roc,
+        global_pr,
+        best_roc_idx,
+        mean_roc_w[best_roc_idx],
+        std_roc_w[best_roc_idx],
+        best_pr_idx,
+        mean_pr_w[best_pr_idx],
+        std_pr_w[best_pr_idx],
+    )
+
+    # 4) hyperparameter stability
+    params = cv_results.get("params_per_outer", [])
+    if params:
+        # for each window, count how many unique param‐dicts across folds
+        n_unique = [
+            len({json.dumps(p, sort_keys=True) for p in win_params})
+            for win_params in zip(*params)
+        ]
+        avg_unique = float(np.mean(n_unique))
+        print(f"\n      • Hyper-parameter stability:")
+        print(
+            f"         ↳ Avg. unique param‐sets / window = {avg_unique:.1f} (min={min(n_unique)}, max={max(n_unique)})"
+        )
+        logger.info("Param stability per window: %s", n_unique)
+
+    # 5) selector diagnostics
+    sel = cv_results.get("selector_stats", {})
+    if sel:
+        names = list(sel.get("names", []))
+        scores = np.asarray(sel.get("scores", []))  # (folds, windows, feats)
+        mask = np.asarray(sel.get("mask", []))  # same shape
+
+        # average fraction of times each metric was kept
+        frac_kept = scores.mean(axis=(0, 1))  # over folds & windows
+        mean_frac = 100 * np.mean(frac_kept)
+        top5_idx = np.argsort(frac_kept)[-5:][::-1]
+        top5 = [(names[i], frac_kept[i] * 100) for i in top5_idx]
+
+        print(f"\n      • Feature‐selection:")
+        print(f"         ↳ Avg. metrics kept = {mean_frac:.1f}%")
+        print(f"         ↳ Top-5 most stable metrics:")
+        for name, pct in top5:
+            print(f"            • {name:<20} {pct:5.1f}%")
+
+        logger.info("Selector avg keep rate %.3f; top5 %s", mean_frac / 100, top5)
+
+    # 6) permutation‐test summary
+    perm = cv_results.get("perm_test", {})
+    if perm:
+        print("\n      • Permutation‐test clusters:")
+        # delegate to your existing summary helper
+        print_permutation_test_summary(perm)
+    print("")  # trailing newline
 
 
 # --------------------------------------------------------------------------- #
