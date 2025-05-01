@@ -1,6 +1,6 @@
 # General experiment parameters (same for every array task)
 dataset_root: /mnt/home/users/tic_163_uma/mpascual/execs/WINDOW_CLASSIFICATION/dataset
-window:       window_500
+window:       window_750
 direction:    up
 seed:         42
 # If you dont have alredy executed the reorganization of folders
@@ -17,5 +17,5 @@ optuna_cfg:   /mnt/home/users/tic_163_uma/mpascual/execs/WINDOW_CLASSIFICATION/c
 selector_cfg: /mnt/home/users/tic_163_uma/mpascual/execs/WINDOW_CLASSIFICATION/cfgs/selector.yaml
 
 # Optional: override number of cores
-tuning_jobs:  16                # None → use joblib default
+tuning_jobs:  32                # None → use joblib default
 cv_jobs:      -1                # -1 → all cores visible to job

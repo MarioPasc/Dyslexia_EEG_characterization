@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 import numpy as np
 import optuna
 from sklearn.base import BaseEstimator, clone
-from sklearn.model_selection import cross_val_score
+from sklearn.metrics import roc_auc_score
 from pyddeeg.classification.pipeline import build_pipeline, load_selector
 from pyddeeg.classification.optimization.utils import (
     load_optuna_config,
@@ -61,17 +61,25 @@ class OptunaEstimator(BaseEstimator):
         model = clone(self.base_estimator).set_params(**model_params)
         pipeline = build_pipeline(selector=selector, model=model)
 
-        scores = cross_val_score(
-            pipeline,
-            X,
-            y,
-            cv=self.cv,
-            scoring=self.scoring,
-            groups=groups,
-            n_jobs=-1,
-        )
-        trial.set_user_attr("cv_scores", scores.tolist())
-        return float(np.mean(scores))
+        intermediate_scores = []
+
+        # Iterate fold-by-fold to report intermediate results
+        for step, (train_idx, valid_idx) in enumerate(self.cv.split(X, y, groups)):
+            pipeline.fit(X[train_idx], y[train_idx])
+            y_pred = pipeline.predict_proba(X[valid_idx])[:, 1]
+
+            intermediate_score = roc_auc_score(y[valid_idx], y_pred)
+            intermediate_scores.append(intermediate_score)
+
+            # Report intermediate step to Optuna
+            trial.report(intermediate_score, step)
+
+            # Check if trial should be pruned
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+
+        trial.set_user_attr("cv_scores", intermediate_scores)
+        return float(np.mean(intermediate_scores))
 
     # ------------------------------ API ------------------------------- #
     def fit(self, X: np.ndarray, y: np.ndarray, groups: np.ndarray):

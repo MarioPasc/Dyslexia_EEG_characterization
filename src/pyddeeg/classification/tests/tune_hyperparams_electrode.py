@@ -205,7 +205,19 @@ def main() -> None:  # pragma: no cover
     # now save
     np.savez_compressed(run_dir / "cv_results.npz", **results)
 
-    print_cv_results_summary(results)
+    loaded_npz = np.load(run_dir / "cv_results.npz", allow_pickle=True)
+
+    cv_results = {}
+    for key in loaded_npz.files:
+        data = loaded_npz[key]
+        # Check if object-type array
+        if data.dtype == "O":
+            # Convert object arrays to Python lists or dicts properly
+            cv_results[key] = data.tolist()
+        else:
+            cv_results[key] = data
+
+    print_cv_results_summary(cv_results)
     logger.info("🎉 Job done.")
 
 

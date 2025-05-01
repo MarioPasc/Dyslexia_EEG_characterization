@@ -2,6 +2,6 @@
 class: sklearn.feature_selection.SelectKBest
 params:
   k:
-    low: 5     # ← Optuna sees a search-space
+    low: 2     # ← Optuna sees a search-space
     high: 15
   score_func: sklearn.feature_selection.f_classif  # fixed literal

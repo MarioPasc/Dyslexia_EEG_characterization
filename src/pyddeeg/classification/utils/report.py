@@ -325,18 +325,24 @@ def print_cv_results_summary(cv_results: Dict[str, Any]) -> None:
         std_pr_w[best_pr_idx],
     )
 
-    # 4) hyperparameter stability
-    params = cv_results.get("params_per_outer", [])
-    if params:
-        # for each window, count how many unique param‐dicts across folds
+    # 4) hyper‐parameter stability
+    params_per_outer = cv_results.get(
+        "params_per_outer", []
+    )  # list[f][windows] of dicts
+    if len(params_per_outer) > 0:
+
+        def _sig(d: dict) -> tuple:
+            # turn each {k: v} into a sorted tuple of (k, repr(v))
+            return tuple(sorted((k, repr(v)) for k, v in d.items()))
+
+        # for each window, count how many unique signatures across folds
         n_unique = [
-            len({json.dumps(p, sort_keys=True) for p in win_params})
-            for win_params in zip(*params)
+            len({_sig(p) for p in win_params}) for win_params in zip(*params_per_outer)
         ]
-        avg_unique = float(np.mean(n_unique))
+        avg = float(np.mean(n_unique))
         print(f"\n      • Hyper-parameter stability:")
         print(
-            f"         ↳ Avg. unique param‐sets / window = {avg_unique:.1f} (min={min(n_unique)}, max={max(n_unique)})"
+            f"         ↳ Avg. unique param-sets/window = {avg:.1f} (min={min(n_unique)}, max={max(n_unique)})"
         )
         logger.info("Param stability per window: %s", n_unique)
 
