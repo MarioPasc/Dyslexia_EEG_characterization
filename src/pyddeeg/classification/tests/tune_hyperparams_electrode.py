@@ -34,9 +34,8 @@ from pyddeeg.classification.engine.trainer import nested_evaluate
 from pyddeeg.classification.utils.report import (
     print_welcome_banner,
     print_dataset_summary,
-    print_tuning_summary,
+    log_user_input_parameters,
     print_cv_results_summary,
-    print_permutation_test_summary,
 )
 
 # -----------------------------------------------------------------------------#
@@ -178,6 +177,13 @@ def main() -> None:  # pragma: no cover
     # ----------------------- electrode-specific out dir ---------------------
     run_dir = out_dir_root / f"{elec}_{window}_{direction}"
     run_dir.mkdir(parents=True, exist_ok=True)
+
+    log_user_input_parameters(
+        settings_yaml=settings_file,
+        model_yaml=cfg["model_cfg"],
+        optuna_yaml=cfg["optuna_cfg"],
+        selector_yaml=cfg["selector_cfg"],
+    )
 
     # ----------------------- step 1 – load dataset --------------------------
     dataset = EEGDataset.load(ds_root, window, direction, elec, random_state=seed)

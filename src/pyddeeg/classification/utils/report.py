@@ -19,21 +19,20 @@ print_permutation_test_summary
 """
 from __future__ import annotations
 
-from pathlib import Path
-from textwrap import indent
-from typing import Any, Dict, List, Sequence
-
-import json
-import logging
+from typing import Any, Dict
 
 import numpy as np
 from pyddeeg.classification import logger  # root logger
 from pyddeeg.classification.dataloaders import EEGDataset
 
+import yaml
+from pathlib import Path
+
+
 __all__ = [
     "print_welcome_banner",
     "print_dataset_summary",
-    "print_tuning_summary",
+    "log_user_input_parameters",
     "print_cv_results_summary",
     "print_permutation_test_summary",
 ]
@@ -130,6 +129,56 @@ def print_welcome_banner(*, package_version: str | None = None) -> None:
     logger.info("🐍  %s initialised – welcome!", title)
 
 
+def log_user_input_parameters(
+    settings_yaml: str, model_yaml: str, optuna_yaml: str, selector_yaml: str
+) -> None:
+    """
+    Logs the parameters specified by the user through YAML configuration files.
+
+    Parameters
+    ----------
+    settings_yaml : str
+        Path to the settings.yaml file.
+    model_yaml : str
+        Path to the model.yaml file.
+    optuna_yaml : str
+        Path to the optuna.yaml file.
+    selector_yaml : str
+        Path to the selector.yaml file.
+    """
+    settings = yaml.safe_load(Path(settings_yaml).read_text())
+    model = yaml.safe_load(Path(model_yaml).read_text())
+    optuna = yaml.safe_load(Path(optuna_yaml).read_text())
+    selector = yaml.safe_load(Path(selector_yaml).read_text())
+
+    # Logging settings.yaml parameters
+    logger.info("🔧 Settings.yaml parameters:")
+    for key, value in settings.items():
+        logger.info(f"    {key}: {value}")
+
+    # Logging model.yaml parameters
+    logger.info("📐 Model.yaml parameters:")
+    logger.info(f"    Base Estimator: {model.get('base_estimator', 'Not specified')}")
+    logger.info("    Hyperparameters:")
+    for param, ranges in model.get("hyperparameters", {}).items():
+        logger.info(f"        {param}: {ranges}")
+
+    # Logging optuna.yaml parameters
+    logger.info("📈 Optuna.yaml parameters:")
+    for key, value in optuna.items():
+        logger.info(f"    {key}: {value}")
+
+    # Logging selector.yaml parameters
+    logger.info("🔍 Selector.yaml parameters:")
+    selector_class = selector.get("class", "Not specified")
+    selector_params = selector.get("params", {})
+    logger.info(f"    Selector Class: {selector_class}")
+    for param, value in selector_params.items():
+        logger.info(f"        {param}: {value}")
+
+    logger.info("✅ YAML parameter logging completed.")
+
+
 # --------------------------------------------------------------------------- #
 def print_dataset_summary(dataset: EEGDataset) -> None:
     """
@@ -202,55 +251,6 @@ def print_dataset_summary(dataset: EEGDataset) -> None:
         elec,
         direction,
     )
-
-
-# --------------------------------------------------------------------------- #
-# --------------------------------------------------------------------------- #
-def print_tuning_summary(tuning_results: Sequence[Dict[str, Any]]) -> None:
-    """
-    Summarise Optuna search results.
-
-    Each entry in *tuning_results* must contain
-    ``"best_params"``  – dict of hyper-parameters
-    ``"performance"``  – either a float **or** a dict with keys
-                         {"mean", "std", "median", "folds"}.
-    """
-    if not tuning_results:
-        print("🔧  Tuning results empty.")
-        logger.warning("Tuning summary: empty results list.")
-        return
-
-    header = "🔧  Hyper-parameter tuning"
-    print(header)
-    logger.info(header)
-
-    # Helper to pull a sensible scalar + formatted string out of "performance"
-    def _parse_perf(perf: Any) -> tuple[float, str]:
-        if isinstance(perf, dict):
-            mean = float(perf.get("mean", np.nan))
-            std = float(perf.get("std", np.nan))
-            return mean, f"{mean:6.4f} ± {std:5.4f}"
-        # fall back to “it’s probably a float already”
-        mean = float(perf)
-        return mean, f"{mean:6.4f}"
-
-    row_fmt = "      • Window #{idx:<2}: ROC-AUC = {perf:<18}   best_params = {params}"
-
-    means: list[float] = []
-    for idx, win in enumerate(tuning_results, start=1):
-        mean_auc, perf_str = _parse_perf(win.get("performance", np.nan))
-        means.append(mean_auc)
-
-        # pretty-print the params without new-lines and trim if too long
-        params_txt = json.dumps(win.get("best_params", {}), separators=(",", ":"))
-        params_txt = (params_txt[:80] + "…") if len(params_txt) > 80 else params_txt
-
-        print(row_fmt.format(idx=idx, perf=perf_str, params=params_txt))
-        logger.info(
-            "Window %s – ROC-AUC %s – params %s", idx, perf_str.strip(), params_txt
-        )
-
-    print(f"      ↳ mean ROC-AUC across windows = {np.nanmean(means):.4f}")
 
 
 # --------------------------------------------------------------------------- #
