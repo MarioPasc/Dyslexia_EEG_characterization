@@ -102,44 +102,74 @@ def print_welcome_banner(*, package_version: str | None = None) -> None:
 # --------------------------------------------------------------------------- #
 def print_dataset_summary(dataset: EEGDataset) -> None:
     """
-    Summarise an :class:`~pyddeeg.classification.dataloaders.EEGDataset`.
+    Summarize an EEGDataset with nested CV and per-fold label distributions.
 
-    The helper drills down into the fields defined in *dataloader.py*:
+    Prints:
+    - Total subjects and class counts (DD / CT)
+    - Number of RQA metrics and time-windows (with window/stride in ms)
+    - Stimulus direction and electrode name
+    - Nested CV scheme (outer × inner folds)
+    - For each outer fold: train/test label counts
 
-    * Separate DD / CT sample counts
-    * n_metrics • n_windows
-    * CV splitter type & #splits
-    * Key metadata (window length, stride, etc.)
+    Parameters
+    ----------
+    dataset : EEGDataset
+        The dataset to summarize.
     """
-    # ---- shapes -----------------------------------------------------------
+    # ---- basic shapes and counts -----------------------------------------
     n_dd, n_metrics, n_windows = dataset.dd.shape
     n_ct = dataset.ct.shape[0]
     n_subjects = n_dd + n_ct
 
-    # ---- metadata ---------------------------------------------------------
+    # ---- nested-CV scheme -----------------------------------------------
+    k_outer = len(dataset.outer_splits)
+    # assume every fold has the same number of inner splits
+    h_inner = len(dataset.inner_splits[0]) if dataset.inner_splits else 0
+
+    # ---- metadata --------------------------------------------------------
     md = dataset.metadata
     window_ms = md.get("window_ms", "—")
     stride_ms = md.get("stride_ms", "—")
     direction = md.get("direction", "—")
-    cv_type = md.get("cv_type", type(dataset.cv).__name__)
-    n_splits = getattr(
-        dataset.cv, "n_splits", getattr(dataset.cv, "get_n_splits", lambda: "?")()
-    )
+    elec = md.get("elec", "—")
 
-    # ----------------------------------------------------------------------
+    # ---- compose lines ---------------------------------------------------
     lines = [
         "📊  EEGDataset summary",
-        f"      • Subjects ............ {n_subjects}  (DD ={n_dd}, CT ={n_ct})",
-        f"      • RQA metrics ......... {n_metrics}",
-        f"      • Time-windows ........ {n_windows}  (window ={window_ms} ms, stride ={stride_ms} ms)",
-        f"      • Direction ........... {direction}",
-        f"      • CV splitter ......... {cv_type}  (n_splits ={n_splits})",
-        f"      • Dataset-root ........ {Path(md.get('dataset_root','?')).expanduser()}",
+        f"    • Subjects ............ {n_subjects}  (DD = {n_dd}, CT = {n_ct})",
+        f"    • RQA metrics ......... {n_metrics}",
+        f"    • Time-windows ........ {n_windows}  "
+        f"(window = {window_ms} ms, stride = {stride_ms} ms)",
+        f"    • Direction ........... {direction}",
+        f"    • Electrode ........... {elec}",
+        f"    • Nested CV ........... {k_outer} outer × {h_inner} inner folds",
+        "    • Label distribution per fold:",
     ]
 
+    for idx, dist in enumerate(dataset.fold_label_dist):
+        tr = dist["train"]
+        te = dist["test"]
+        lines.append(
+            f"        — Fold {idx}: "
+            f"train (DD = {tr['DD']}, CT = {tr['CT']}), "
+            f"test  (DD = {te['DD']}, CT = {te['CT']})"
+        )
+
     print("\n".join(lines))
+
+    # ---- concise logger info --------------------------------------------
     logger.info(
-        "EEGDataset – %s", "; ".join(l.split("…")[-1].strip() for l in lines[1:])
+        "EEGDataset: %d subjects (DD=%d,CT=%d); %d metrics; %d windows; "
+        "nested CV %dx%d; electrode=%s; direction=%s",
+        n_subjects,
+        n_dd,
+        n_ct,
+        n_metrics,
+        n_windows,
+        k_outer,
+        h_inner,
+        elec,
+        direction,
     )
 
 
