@@ -85,6 +85,7 @@ class OptunaEstimator(BaseEstimator):
                 else None
             ),
             study_name=self.study_name,
+            load_if_exists=True,
         )
         study.optimize(
             lambda t: self._objective(t, X, y, groups), n_trials=self.n_trials

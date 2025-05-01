@@ -76,11 +76,13 @@ def tune_one_electrode_parallel(
 
     # turn list[(train, val)] into a splitter object that sklearn can iterate
     class _PredefinedCV:
-        def get_n_splits(self):  # noqa: D401
+        def get_n_splits(self) -> int:
             return len(inner_splits)
 
-        def split(self, *_):
-            yield from inner_splits
+        def split(self, X=None, y=None, groups=None):
+            # ignore X, y, groups, just re-yield our prebuilt index pairs
+            for train_idx, test_idx in inner_splits:
+                yield train_idx, test_idx
 
     inner_cv = _PredefinedCV()
 
