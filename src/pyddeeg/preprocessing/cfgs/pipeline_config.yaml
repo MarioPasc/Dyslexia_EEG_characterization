@@ -6,16 +6,16 @@
 # ------------------------------------------------------------------------
 
 paths:
-  raw_timeseries_dir: "/home/mario/Python/Datasets/EEG/timeseries/original"
-  zerolag_out_dir:    "/home/mario/Python/Datasets/EEG/timeseries/processed/zerolag"
-  rqa_out_root:       "/mnt/home/users/tic_163_uma/mpascual/execs"
-  dataset_out_dir:    "/mnt/home/users/tic_163_uma/mpascual/execs/dataset"
+  raw_timeseries_dir: "/mnt/home/users/tic_163_uma/mpascual/fscratch/datasets/EEG/original"
+  zerolag_out_dir:    "/mnt/home/users/tic_163_uma/mpascual/fscratch/datasets/EEG/zerolag"
+  rqa_out_root:       "/mnt/home/users/tic_163_uma/mpascual/fscratch/datasets/EEG/raw"
+  dataset_out_dir:    "/mnt/home/users/tic_163_uma/mpascual/execs/WINDOW_CLASSIFICATION/dataset"
 
 # ------------------------------------------------------------------------
 zerolag:        # ← Stage-1 template (can be used standalone)
   # Data & I/O (paths are overridden by the orchestrator)
   age: "7"
-  stim: "20"            # will be overridden dynamically
+  stim: "2"            # will be overridden dynamically
   sampling_freq: 500
   nframes: 68000        # <- real length at 500 Hz
   speed: "fast"         # "slow" or "fast"
@@ -86,7 +86,7 @@ rqa:            # ← Stage-2 template (can be used standalone)
   # Processing parameters
   target_channel: ""     # injected on the fly
   target_bandwidth: 1
-  window_sizes: [50, 100, 150, 200]  # ms
+  window_sizes: [500, 750, 1000]  # ms
 
   # Takens-space tuning  (was missing)
   optimise_takens:  true      # whether to fine-tune τ and m
