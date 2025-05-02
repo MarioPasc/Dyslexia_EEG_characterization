@@ -28,6 +28,7 @@ dependencies = [
   "filelock",
   "nolitsa @ git+https://github.com/manu-mannattil/nolitsa.git",
   "numba",
+  "statsmodels",
 ]
 
 description = "A Python library that contains all the functions used to perform experiments on EEG data for the analysis and characterization of Developmental Dyslexia (DD)."
@@ -46,4 +47,4 @@ where = ["src"]
 
 [[tool.mypy.overrides]]
 ignore_missing_imports = true
-module = ["scipy.*", "pyddeeg.*", "scienceplots", "pyunicorn.*", "sklearn.*", "tqdm", "yaml", "psutil", "mne.*", "joblib", "tqdm"]
+module = ["scipy.*", "pyddeeg.*", "scienceplots", "pyunicorn.*", "sklearn.*", "tqdm", "yaml", "psutil", "mne.*", "joblib", "tqdm", "statsmodels.*"]

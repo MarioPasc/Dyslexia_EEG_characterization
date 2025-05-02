@@ -30,6 +30,7 @@ from pyddeeg.classification import logger
 from pyddeeg.utils.postprocessing.reorganize_per_window_results import (
     reorganization_pipeline,
 )
+from pyddeeg.classification.statistics.analyze import analyze_results
 from pyddeeg.classification.engine.trainer import nested_evaluate
 from pyddeeg.classification.utils.report import (
     print_welcome_banner,
@@ -209,9 +210,10 @@ def main() -> None:  # pragma: no cover
     results["perm_test"]["clusters"] = np.array(clusters, dtype=object)
 
     # now save
-    np.savez_compressed(run_dir / "cv_results.npz", **results)
+    output_path = run_dir / "cv_results.npz"
+    np.savez_compressed(output_path, **results)
 
-    loaded_npz = np.load(run_dir / "cv_results.npz", allow_pickle=True)
+    loaded_npz = np.load(output_path, allow_pickle=True)
 
     cv_results = {}
     for key in loaded_npz.files:
@@ -224,6 +226,16 @@ def main() -> None:  # pragma: no cover
             cv_results[key] = data
 
     print_cv_results_summary(cv_results)
+
+    # ----------------------- step 4 – perform statistical analysis on results -----------
+    # Hardcoded n_perm=10_000 and alpha=0.05
+    analyze_results(
+        results=output_path,
+        n_perm=10_000,
+        alpha=0.05,
+        out=run_dir / "stats.npz",
+    )
+
     logger.info("🎉 Job done.")
 
 
