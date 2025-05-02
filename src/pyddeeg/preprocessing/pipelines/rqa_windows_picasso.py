@@ -7,6 +7,7 @@ with multiple window sizes across multiple datasets. Configuration is loaded fro
 """
 
 import os
+import sys
 
 os.environ.update(
     {
@@ -17,20 +18,23 @@ os.environ.update(
     }
 )
 
-
-import sys
-import yaml
-import numpy as np
-import pandas as pd
 import argparse
 import logging
 import time
-from dataclasses import dataclass
+
+import yaml
+from pathlib import Path
+
+import numpy as np
+
 from typing import List, Dict, Optional, Any, Tuple
-from pyddeeg.signal_processing.rqa_toolbox.utils import iter_signal_windows
-from pyddeeg.signal_processing.rqa_toolbox.rqa import compute_rqa_metrics_for_window
-from pyddeeg.signal_processing.preprocessing.pipelines import CHANNEL_NAME_TO_INDEX
-from pyddeeg.signal_processing.rqa_toolbox.optimization.tuner import tune_window
+
+from dataclasses import dataclass
+
+from pyddeeg.preprocessing.tools.rqa_toolbox.utils import iter_signal_windows
+from pyddeeg.preprocessing.tools.rqa_toolbox.rqa import compute_rqa_metrics_for_window
+from pyddeeg.preprocessing.pipelines import CHANNEL_NAME_TO_INDEX
+from pyddeeg.preprocessing.tools.rqa_toolbox.optimization.tuner import tune_window
 
 # Add Dask imports
 from dask import delayed
@@ -409,7 +413,7 @@ def process_dataset(
         # explicit cleanup to keep the nanny happy
         del sig
         gc.collect()
-        from pyddeeg.signal_processing.rqa_toolbox.optimization.tuner import (
+        from pyddeeg.preprocessing.tools.rqa_toolbox.optimization.tuner import (
             _estimate_tau,
         )
 
@@ -696,6 +700,16 @@ def main():
         ):
             logger.exception("Detailed traceback:")
         return 1  # Error exit code
+
+
+def run_from_config(
+    cfg_path: Path | str, *, channel: str | int, no_parallel: bool = False
+) -> None:
+    argv = ["--config", str(cfg_path), "--channel", str(channel)]
+    if no_parallel:
+        argv.append("--no-parallel")
+    sys.argv = ["rqa_windows_picasso.py", *argv]
+    sys.exit(main())  # re-use existing entry point
 
 
 if __name__ == "__main__":

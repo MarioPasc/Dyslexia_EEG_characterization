@@ -2,7 +2,8 @@ import numpy as np
 from typing import List, Tuple, Dict, Optional, Union
 import scipy.stats as stats
 
-from pyddeeg.signal_processing.rqa_toolbox.rqa import compute_rqa_metrics_for_window
+from pyddeeg.preprocessing.tools.rqa_toolbox.rqa import compute_rqa_metrics_for_window
+
 
 def compute_rqa_batch(
     signal: np.ndarray,

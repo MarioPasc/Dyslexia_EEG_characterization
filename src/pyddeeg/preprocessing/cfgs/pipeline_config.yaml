@@ -1,0 +1,48 @@
+# -----------------------------------------------------------------
+# Global paths (rarely change)
+paths:
+  raw_timeseries_dir: "/datasets/EEG/timeseries"
+  zerolag_out_dir:    "/datasets/EEG/zerolag"          # stage-1 result
+  rqa_out_root:       "/datasets/EEG/rqa_windows/raw"  # one sub-folder per electrode
+  dataset_out_dir:    "/datasets/EEG/rqa_windows/dataset"
+
+# -----------------------------------------------------------------
+# Stage-1  (zero-lag filtering)
+zerolag:
+  speed: "fast"                  # 'slow' | 'fast'
+  sampling_freq: 500
+  eeg_bands:
+    delta:  [1, 4]
+    theta:  [4, 8]
+    alpha:  [8, 13]
+    beta:   [13, 30]
+    gamma:  [30, 80]
+  show_filter_response: false
+
+# -----------------------------------------------------------------
+# Stage-2  (multi-window RQA)
+rqa:
+  # static:
+  window_sizes: [500, 750, 1000]
+  target_bandwidth: 4              # gamma index
+  optimise_takens:  true
+  tuning_max_lag:   120
+  tuning_max_dim:   12
+  tuning_rec_rate:  0.15
+  rqa_parameters:
+    embedding_dim: 10
+    radius:        0.8
+    time_delay:    1
+    min_diagonal_line:      5
+    min_vertical_line:      1
+    min_white_vertical_line: 1
+    metrics_to_use: [RR, DET, L_max, L_mean, ENT, LAM, TT,
+                     V_max, V_mean, V_ENT, W_max, W_mean,
+                     W_ENT, CLEAR, PERM_ENT]
+
+  # Dask
+  dask:
+    use_dask: true
+    n_workers: 32
+    threads_per_worker: 1
+    memory_limit: "3.5GB"

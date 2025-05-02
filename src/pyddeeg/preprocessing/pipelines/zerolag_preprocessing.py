@@ -24,7 +24,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 
-from pyddeeg.signal_processing.preprocessing.tools import zerolag_bpfir2
+from pyddeeg.preprocessing.tools import zerolag_bpfir2
 
 # Optional imports for accelerated processing
 try:
@@ -377,6 +377,10 @@ def main(config_path: str) -> None:
         gc.collect()
 
     logger.info("Preprocessing completed successfully")
+
+
+def run(config_path: Path | str) -> None:  # new
+    main(str(config_path))
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ from typing import Dict, Tuple
 import numpy as np
 from nolitsa import delay, dimension
 from scipy.spatial.distance import pdist
-from pyddeeg.signal_processing.rqa_toolbox import extract_signal_windows
+from pyddeeg.preprocessing.tools.rqa_toolbox.utils import extract_signal_windows
 
 # ---------------------------------------------------------------------
 # Public type alias
