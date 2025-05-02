@@ -1,48 +1,122 @@
-# -----------------------------------------------------------------
-# Global paths (rarely change)
-paths:
-  raw_timeseries_dir: "/datasets/EEG/timeseries"
-  zerolag_out_dir:    "/datasets/EEG/zerolag"          # stage-1 result
-  rqa_out_root:       "/datasets/EEG/rqa_windows/raw"  # one sub-folder per electrode
-  dataset_out_dir:    "/datasets/EEG/rqa_windows/dataset"
+# ========================== MASTER PIPELINE YAML =========================
+# This file unifies every option that existed in
+#   • zerolag_config.yaml   :contentReference[oaicite:1]{index=1}:contentReference[oaicite:2]{index=2}
+#   • rqa_windows.yaml      :contentReference[oaicite:3]{index=3}:contentReference[oaicite:4]{index=4}
+# plus the global paths used by the orchestrator.
+# ------------------------------------------------------------------------
 
-# -----------------------------------------------------------------
-# Stage-1  (zero-lag filtering)
-zerolag:
-  speed: "fast"                  # 'slow' | 'fast'
+paths:
+  raw_timeseries_dir: "/home/mario/Python/Datasets/EEG/timeseries/original"
+  zerolag_out_dir:    "/home/mario/Python/Datasets/EEG/timeseries/processed/zerolag"
+  rqa_out_root:       "/mnt/home/users/tic_163_uma/mpascual/execs"
+  dataset_out_dir:    "/mnt/home/users/tic_163_uma/mpascual/execs/dataset"
+
+# ------------------------------------------------------------------------
+zerolag:        # ← Stage-1 template (can be used standalone)
+  # Data & I/O (paths are overridden by the orchestrator)
+  age: "7"
+  stim: "20"            # will be overridden dynamically
   sampling_freq: 500
-  eeg_bands:
-    delta:  [1, 4]
-    theta:  [4, 8]
-    alpha:  [8, 13]
-    beta:   [13, 30]
-    gamma:  [30, 80]
+  nframes: 68000        # <- real length at 500 Hz
+  speed: "fast"         # "slow" or "fast"
   show_filter_response: false
 
-# -----------------------------------------------------------------
-# Stage-2  (multi-window RQA)
-rqa:
-  # static:
-  window_sizes: [500, 750, 1000]
-  target_bandwidth: 4              # gamma index
-  optimise_takens:  true
-  tuning_max_lag:   120
-  tuning_max_dim:   12
-  tuning_rec_rate:  0.15
-  rqa_parameters:
-    embedding_dim: 10
-    radius:        0.8
-    time_delay:    1
-    min_diagonal_line:      5
-    min_vertical_line:      1
-    min_white_vertical_line: 1
-    metrics_to_use: [RR, DET, L_max, L_mean, ENT, LAM, TT,
-                     V_max, V_mean, V_ENT, W_max, W_mean,
-                     W_ENT, CLEAR, PERM_ENT]
+  eeg_bands:            # Hz
+    Delta: [0.5, 4]
+    Theta: [4, 8]
+    Alpha: [8, 12]
+    Beta:  [12, 30]
+    Gamma: [30, 80]
 
-  # Dask
+  ch_names: &channels   # reuse anchor later if needed
+    - "Fp1"  
+    - "Fp2"  
+    - "F7" 
+    - "F3"  
+    - "Fz"  
+    - "F4"  
+    - "F8"
+    - "FC5"  
+    - "FC1"  
+    - "FC2" 
+    - "FC6" 
+    - "T7"  
+    - "C3"  
+    - "C4"
+    - "T8"   
+    - "TP9"  
+    - "CP5" 
+    - "CP1" 
+    - "CP2" 
+    - "CP6" 
+    - "TP10"
+    - "P7"   
+    - "P3"   
+    - "Pz"  
+    - "P4"  
+    - "P8"  
+    - "PO9" 
+    - "O1"
+    - "Oz"   
+    - "O2"   
+    - "PO10" 
+    - "Cz"
+
+# ------------------------------------------------------------------------
+rqa:            # ← Stage-2 template (can be used standalone)
+  # Dask parallelism
   dask:
     use_dask: true
-    n_workers: 32
-    threads_per_worker: 1
-    memory_limit: "3.5GB"
+    n_workers: 16
+    threads_per_worker: 2
+    memory_limit: "8GB"
+
+  # I/O (paths overridden by orchestrator)
+  datasets:
+    CT_UP:   "CT_UP_preprocess_${STIM}.npz"   # ${STIM} replaced on the fly
+    DD_UP:   "DD_UP_preprocess_${STIM}.npz"
+    CT_DOWN: "CT_DOWN_preprocess_${STIM}.npz"
+    DD_DOWN: "DD_DOWN_preprocess_${STIM}.npz"
+
+  logging:
+    directory: ""   # auto-set inside each electrode folder
+    filename: "rqa_windows.log"
+    level: "INFO"
+
+  # Processing parameters
+  target_channel: ""     # injected on the fly
+  target_bandwidth: 1
+  window_sizes: [50, 100, 150, 200]  # ms
+
+  # Takens-space tuning  (was missing)
+  optimise_takens:  true      # whether to fine-tune τ and m
+  tuning_max_lag:   120       # lag search range (samples)
+  tuning_max_dim:   12        # max embedding dimension
+  tuning_rec_rate:  0.15      # target recurrence rate for radius search
+
+
+  # RQA parameters (identical to usual file)
+  rqa_parameters:
+    embedding_dim: 10
+    radius: 0.8
+    time_delay: 1
+    min_diagonal_line: 5
+    min_vertical_line: 1
+    min_white_vertical_line: 1
+    metrics_to_use:
+      - "RR"     
+      - "DET"        
+      - "L_max"  
+      - "L_mean"
+      - "ENT"    
+      - "LAM"        
+      - "TT"     
+      - "V_max"
+      - "V_mean" 
+      - "V_ENT"      
+      - "W_max"  
+      - "W_mean"
+      - "W_ENT"  
+      - "CLEAR"      
+      - "PERM_ENT"
+# ========================================================================

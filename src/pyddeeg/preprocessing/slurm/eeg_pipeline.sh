@@ -25,6 +25,6 @@ CHANNEL=${CHANNELS[$SLURM_ARRAY_TASK_ID]}
 
 python preprocessing.py \
 --config /path/to/pipeline_config.yaml \
---stim 20 \
+--stim 2 \
 --channel "$CHANNEL" \
 --do-rqa           # zerolag is auto-skipped if done

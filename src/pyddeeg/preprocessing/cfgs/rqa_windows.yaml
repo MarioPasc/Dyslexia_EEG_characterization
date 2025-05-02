@@ -22,6 +22,13 @@ logging:
   filename: "rqa_windows.log"
   level: "INFO"
 
+# Tuning parameters
+optimise_takens: true
+tuning_max_lag: 120
+tuning_max_dim: 12
+tuning_rec_rate: 0.15
+
+
 # Processing parameters
 target_channel: "$TARGET_CHANNEL"
 target_bandwidth: 4 
