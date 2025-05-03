@@ -163,12 +163,19 @@ def run_pipeline(args: argparse.Namespace, master: MasterCfg) -> None:
 
     # ————————————————————————————— STAGE 2  RQA windows
     rqa_cfg = build_rqa_cfg(master, stim, channel)
-    rqa_cfg_path = Path(rqa_cfg["output_directory"]) / f"_rqa_{channel}.yaml"
+
+    # ensure <rqa_out_root>/<channel>/ exists
+    output_dir = Path(rqa_cfg["output_directory"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    rqa_cfg_path = output_dir / f"_rqa_{channel}.yaml"
+
     cfg_changed = write_if_changed(rqa_cfg, rqa_cfg_path, logger)
-    sentinel = (
-        Path(rqa_cfg["output_directory"]) / "CT_UP" / "rqa_analysis_CT_UP_metrics.npz"
-    )
-    if args.do_rqa or (cfg_changed and not sentinel.exists()):
+
+    sentinel = output_dir / "CT_UP" / "rqa_analysis_CT_UP_metrics.npz"
+
+    need_rqa = args.do_rqa or cfg_changed or not sentinel.exists()
+    if need_rqa:
         logger.info("[STAGE-2] RQA started")
         run_from_config(rqa_cfg_path, channel=channel, no_parallel=args.no_parallel)
     else:
