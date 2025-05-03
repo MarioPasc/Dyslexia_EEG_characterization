@@ -1,7 +1,7 @@
 # ========================== MASTER PIPELINE YAML =========================
 # This file unifies every option that existed in
-#   • zerolag_config.yaml   :contentReference[oaicite:1]{index=1}:contentReference[oaicite:2]{index=2}
-#   • rqa_windows.yaml      :contentReference[oaicite:3]{index=3}:contentReference[oaicite:4]{index=4}
+#   • zerolag_config.yaml   
+#   • rqa_windows.yaml      
 # plus the global paths used by the orchestrator.
 # ------------------------------------------------------------------------
 
