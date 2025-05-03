@@ -703,9 +703,9 @@ def main():
 
 
 def run_from_config(
-    cfg_path: Path | str, *, channel: str | int, no_parallel: bool = False
+    cfg_path: Path | str, *, channel: int | int, no_parallel: bool = False
 ) -> None:
-    argv = ["--config", str(cfg_path), "--channel", str(channel)]
+    argv = ["--config", str(cfg_path), "--channel", int(channel)]
     if no_parallel:
         argv.append("--no-parallel")
     sys.argv = ["rqa_windows_picasso.py", *argv]

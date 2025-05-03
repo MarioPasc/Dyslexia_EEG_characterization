@@ -146,11 +146,11 @@ def run_pipeline(args: argparse.Namespace, master: MasterCfg) -> None:
     logger = setup_logger(Path(paths["rqa_out_root"]) / "_logs", level="INFO")
 
     stim = str(args.stim)
-    channel = (
+    channel_name = (
         EEG_CHANNELS[int(args.channel)] if args.channel.isdigit() else args.channel
     )
     logger.info(
-        "========== EEG PIPELINE – stim %s – channel %s ==========", stim, channel
+        "========== EEG PIPELINE – stim %s – channel %s ==========", stim, channel_name
     )
 
     # ————————————————————————————— STAGE 1  Zero-lag preprocessing
@@ -165,13 +165,13 @@ def run_pipeline(args: argparse.Namespace, master: MasterCfg) -> None:
         logger.info("[STAGE-1] Skipped (already up to date)")
 
     # ————————————————————————————— STAGE 2  RQA windows
-    rqa_cfg = build_rqa_cfg(master, stim, channel)
+    rqa_cfg = build_rqa_cfg(master, stim, channel_name)
 
     # ensure <rqa_out_root>/<channel>/ exists
     output_dir = Path(rqa_cfg["output_directory"])
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    rqa_cfg_path = output_dir / f"_rqa_{channel}.yaml"
+    rqa_cfg_path = output_dir / f"_rqa_{channel_name}.yaml"
 
     cfg_changed = write_if_changed(rqa_cfg, rqa_cfg_path, logger)
 
@@ -180,7 +180,9 @@ def run_pipeline(args: argparse.Namespace, master: MasterCfg) -> None:
     need_rqa = args.do_rqa or cfg_changed or not sentinel.exists()
     if need_rqa:
         logger.info("[STAGE-2] RQA started")
-        run_from_config(rqa_cfg_path, channel=channel, no_parallel=args.no_parallel)
+        run_from_config(
+            rqa_cfg_path, channel=args.channel, no_parallel=args.no_parallel
+        )
     else:
         logger.info("[STAGE-2] Skipped (already up to date)")
 
