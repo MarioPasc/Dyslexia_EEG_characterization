@@ -130,11 +130,15 @@ def build_rqa_cfg(master: MasterCfg, stim: str, channel: str) -> Dict[str, Any]:
     cfg["output_directory"] = (
         Path(master["paths"]["rqa_out_root"]) / channel
     ).as_posix()
-    # also relocate per-stage log dir inside electrode folder
-    cfg.setdefault("logging", {})
-    cfg["logging"].setdefault(
-        "directory", (Path(cfg["output_directory"]) / "_logs").as_posix()
-    )
+    # ---- logging -------------------------------------------------
+    log_cfg = cfg.setdefault("logging", {})
+    # directory: give default if missing OR empty / falsy
+    if not log_cfg.get("directory"):
+        log_cfg["directory"] = (Path(cfg["output_directory"]) / "_logs").as_posix()
+    # filename: still optional, but keep a sensible default
+    log_cfg.setdefault("filename", "rqa_windows.log")
+    log_cfg.setdefault("level", "INFO")  # just in case
+
     return cfg
 
 
