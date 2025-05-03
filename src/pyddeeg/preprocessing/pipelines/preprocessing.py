@@ -44,6 +44,7 @@ from pyddeeg.preprocessing.pipelines.rqa_windows_picasso import (
 from pyddeeg.utils.postprocessing.reorganize_per_window_results import (
     reorganization_pipeline as run_reorg,  # stage-3
 )
+from pyddeeg import EEG_CHANNELS
 
 # ── Typed dictionaries for better autocompletion ------------------------
 
@@ -145,7 +146,9 @@ def run_pipeline(args: argparse.Namespace, master: MasterCfg) -> None:
     logger = setup_logger(Path(paths["rqa_out_root"]) / "_logs", level="INFO")
 
     stim = str(args.stim)
-    channel = str(args.channel)
+    channel = (
+        EEG_CHANNELS[int(args.channel)] if args.channel.isdigit() else args.channel
+    )
     logger.info(
         "========== EEG PIPELINE – stim %s – channel %s ==========", stim, channel
     )
