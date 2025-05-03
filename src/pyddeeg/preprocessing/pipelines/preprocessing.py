@@ -231,22 +231,6 @@ def main() -> None:
     if args.explain:
         # Use yaml.safe_dump for consistent output format
         print(yaml.safe_dump(master, sort_keys=False, indent=2))
-        # Print stage-specific configs as well for better debugging
-        stim = str(args.stim)
-        channel_name = (
-            EEG_CHANNELS[int(args.channel)] if args.channel.isdigit() else args.channel
-        )
-        print("\n--- Effective Zero-lag Config ---")
-        print(
-            yaml.safe_dump(build_zerolag_cfg(master, stim), sort_keys=False, indent=2)
-        )
-        print("\n--- Effective RQA Config ---")
-        print(
-            yaml.safe_dump(
-                build_rqa_cfg(master, stim, channel_name), sort_keys=False, indent=2
-            )
-        )
-        return
     run_pipeline(args, master)
 
 
