@@ -27,7 +27,7 @@ def load_data(raw_dir):
     window_sizes : numpy.ndarray
         Array of window sizes
     """
-    data = {f.split("_")[2]: os.path.join(raw_dir, f) for f in os.listdir(raw_dir)}
+    data = {f: os.path.join(raw_dir, f) for f in os.listdir(raw_dir)}
     folders = ["DD_DOWN", "CT_UP", "DD_UP", "CT_DOWN"]
 
     for key, value in data.items():
