@@ -37,8 +37,8 @@ from pyddeeg.preprocessing.pipelines import CHANNEL_NAME_TO_INDEX
 from pyddeeg.preprocessing.tools.rqa_toolbox.optimization.tuner import tune_window
 
 # Add Dask imports
-from dask import delayed
-from dask.distributed import Client, LocalCluster, progress
+from dask.distributed import as_completed
+from dask.distributed import Client, LocalCluster
 
 import gc
 
@@ -331,22 +331,29 @@ def process_dataset(
 ) -> Dict[str, Any]:
     """
     Compute RQA + tuned Takens parameters for every patient in *dataset*.
-    The first patient is processed directly to size the tensors; the rest
-    are dispatched (optionally) to Dask.
+    Works with or without an external Dask `client`.
     """
+
     logger.info(f"Processing dataset: {dataset_name} ({dataset_path})")
 
-    data = np.load(dataset_path)["data"]
-    n_pat, n_chan, _, n_band = data.shape
+    # ---- read only the shape – no 2-GB blob in RAM -------------------
+    with np.load(dataset_path, mmap_mode="r") as npz:
+        n_pat, _n_ch, _n_samp, _n_band = npz["data"].shape
 
-    # --- containers ---------------------------------------------------
+    # ------------------- containers -----------------------------------
     results_by_window: Dict[int, dict] = {}
     takens_by_window: Dict[int, np.ndarray] = {}
 
-    # ---------- first patient (dims & names) --------------------------
+    # ---------- first patient (sizes & metric list) -------------------
+    with np.load(dataset_path, mmap_mode="r") as npz:
+        first_sig = np.asarray(
+            npz["data"][0, config.target_channel, :, config.target_bandwidth],
+            dtype=np.float64,
+        )
+
     first = process_single_patient(
         patient_idx=0,
-        patient_signal=data[0, config.target_channel, :, config.target_bandwidth],
+        patient_signal=first_sig,
         window_sizes=config.window_sizes,
         optimise_takens=config.optimise_takens,
         embedding_dim=config.embedding_dim,
@@ -362,36 +369,28 @@ def process_dataset(
         tuning_rec_rate=config.tuning_rec_rate,
     )
 
-    for wsize, (met, tak) in first.items():
+    for wsize, (met0, tak0) in first.items():
         stride = wsize // 2
-        n_met, n_win = met.shape
-        results_by_window[wsize] = {
-            "stride": stride,
-            "num_windows": n_win,
-            "results_tensor": np.zeros((n_pat, n_met, n_win)),
-            "window_centers": np.arange(n_win) * stride + wsize // 2,
-        }
-        takens_by_window[wsize] = np.zeros((n_pat, 3, n_win))
-        results_by_window[wsize]["results_tensor"][0] = met
-        takens_by_window[wsize][0] = tak
+        n_met, n_win = met0.shape
+        results_by_window[wsize] = dict(
+            stride=stride,
+            num_windows=n_win,
+            results_tensor=np.zeros(
+                (n_pat, n_met, n_win), dtype=np.float32  # float32!
+            ),
+            window_centers=np.arange(n_win) * stride + wsize // 2,
+        )
+        takens_by_window[wsize] = np.zeros((n_pat, 3, n_win), dtype=np.float32)
+        results_by_window[wsize]["results_tensor"][0] = met0
+        takens_by_window[wsize][0] = tak0
 
-    # ---------- remaining patients (optional Dask) --------------------
-    def _patient_task(
-        idx: int,
-        dataset_path: str,
-        target_ch: int,
-        target_bw: int,
-        cfg: RQAConfig,
-    ) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
-        """Runs in a worker process – reads ONE patient and returns numpy
-        results.  All large arrays are released before returning."""
-        import gc
-
+    # ---------- helper that each worker (or main proc) will run -------
+    def _patient_task(idx: int, *, dataset_path: str, cfg: RQAConfig):
         with np.load(dataset_path, mmap_mode="r") as npz_file:
             sig = np.asarray(
-                npz_file["data"][idx, target_ch, :, target_bw], dtype=np.float64
+                npz_file["data"][idx, cfg.target_channel, :, cfg.target_bandwidth],
+                dtype=np.float64,
             )
-
         out = process_single_patient(
             patient_idx=idx,
             patient_signal=sig,
@@ -409,80 +408,46 @@ def process_dataset(
             tuning_max_dim=cfg.tuning_max_dim,
             tuning_rec_rate=cfg.tuning_rec_rate,
         )
-
-        # explicit cleanup to keep the nanny happy
-        del sig
         gc.collect()
-        from pyddeeg.preprocessing.tools.rqa_toolbox.optimization.tuner import (
-            _estimate_tau,
-        )
+        return idx, out
 
-        _estimate_tau.cache_clear()
-        return out
-
+    # ------------------ remaining patients ----------------------------
     if n_pat > 1:
         indices = list(range(1, n_pat))
-        if client:
+
+        if client:  # ----------- PARALLEL (Dask) --------------------
             futures = client.map(
                 _patient_task,
                 indices,
                 dataset_path=dataset_path,
-                target_ch=config.target_channel,
-                target_bw=config.target_bandwidth,
                 cfg=config,
             )
-            for idx, pat_dict in zip(indices, client.gather(futures)):
+            for fut in as_completed(futures):  # stream results
+                idx, pat_dict = fut.result()
                 for wsize, (met, tak) in pat_dict.items():
                     results_by_window[wsize]["results_tensor"][idx] = met
                     takens_by_window[wsize][idx] = tak
-                # --- Logging every X patients ---
-                if idx % 10 == 0:
-                    for wsize, tak in pat_dict.items():
-                        tak_arr = tak[1]  # shape [3, n_win]
-                        n_win = tak_arr.shape[1]
-                        if n_win >= 3:
-                            mid_idxs = (
-                                [n_win // 2 - 1, n_win // 2, n_win // 2 + 1]
-                                if n_win > 3
-                                else list(range(n_win))
-                            )
-                        else:
-                            mid_idxs = list(range(n_win))
-                        vals = tak_arr[:, mid_idxs]
-                        logger.info(
-                            f"[Patient {idx}] Window {wsize}: tau={vals[0]}, m={vals[1]}, eps={vals[2]}"
-                        )
-        else:
+
+        else:  # ----------- PURE SERIAL ------------------------
             for idx in indices:
-                pat_dict = _patient_task(idx)
+                _, pat_dict = _patient_task(
+                    idx,
+                    dataset_path=dataset_path,
+                    cfg=config,
+                )
                 for wsize, (met, tak) in pat_dict.items():
                     results_by_window[wsize]["results_tensor"][idx] = met
                     takens_by_window[wsize][idx] = tak
-                # --- Logging every X patients ---
-                if idx % 10 == 0:
-                    for wsize, (met, tak_arr) in pat_dict.items():
-                        n_win = tak_arr.shape[1]
-                        if n_win >= 3:
-                            mid_idxs = (
-                                [n_win // 2 - 1, n_win // 2, n_win // 2 + 1]
-                                if n_win > 3
-                                else list(range(n_win))
-                            )
-                        else:
-                            mid_idxs = list(range(n_win))
-                        vals = tak_arr[:, mid_idxs]
-                        logger.info(
-                            f"[Patient {idx}] Window {wsize}: tau={vals[0]}, m={vals[1]}, eps={vals[2]}"
-                        )
-    # ---------- return ------------------------------------------------
-    return {
-        "dataset_name": dataset_name,
-        "num_patients": n_pat,
-        "window_sizes": config.window_sizes,
-        "metric_names": config.metrics_to_use,
-        "results_by_window": results_by_window,
-        "takens_by_window": takens_by_window,  # ← NEW
-    }
+
+    # ------------------ return ----------------------------------------
+    return dict(
+        dataset_name=dataset_name,
+        num_patients=n_pat,
+        window_sizes=config.window_sizes,
+        metric_names=config.metrics_to_use,
+        results_by_window=results_by_window,
+        takens_by_window=takens_by_window,
+    )
 
 
 def process_all_datasets(

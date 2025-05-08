@@ -67,9 +67,9 @@ rqa:            # ← Stage-2 template (can be used standalone)
   # Dask parallelism
   dask:
     use_dask: true
-    n_workers: 16
+    n_workers: 8
     threads_per_worker: 2
-    memory_limit: "8GB"
+    memory_limit: "16GB"
 
   # I/O (paths overridden by orchestrator)
   datasets:
