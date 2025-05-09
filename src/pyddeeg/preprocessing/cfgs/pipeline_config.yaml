@@ -66,17 +66,17 @@ zerolag:        # ← Stage-1 template (can be used standalone)
 rqa:            # ← Stage-2 template (can be used standalone)
   # Dask parallelism
   dask:
-    use_dask: true
+    use_dask: false
     n_workers: 8
     threads_per_worker: 2
     memory_limit: "16GB"
 
   # I/O (paths overridden by orchestrator)
   datasets:
-    CT_UP:   "CT_UP_preprocess_${STIM}.npz"   # ${STIM} replaced on the fly
-    DD_UP:   "DD_UP_preprocess_${STIM}.npz"
+    #CT_UP:   "CT_UP_preprocess_${STIM}.npz"   # ${STIM} replaced on the fly
+    #DD_UP:   "DD_UP_preprocess_${STIM}.npz"
     CT_DOWN: "CT_DOWN_preprocess_${STIM}.npz"
-    DD_DOWN: "DD_DOWN_preprocess_${STIM}.npz"
+    #DD_DOWN: "DD_DOWN_preprocess_${STIM}.npz"
 
   logging:
     directory: ""   # auto-set inside each electrode folder

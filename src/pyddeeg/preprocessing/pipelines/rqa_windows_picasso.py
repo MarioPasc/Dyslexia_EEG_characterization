@@ -18,6 +18,10 @@ os.environ.update(
     }
 )
 
+import ctypes, gc, os, numpy as np
+
+libc = ctypes.CDLL("libc.so.6")
+
 import argparse
 import logging
 import time
@@ -386,11 +390,14 @@ def process_dataset(
 
     # ---------- helper that each worker (or main proc) will run -------
     def _patient_task(idx: int, *, dataset_path: str, cfg: RQAConfig):
-        with np.load(dataset_path, mmap_mode="r") as npz_file:
+        """Worker routine: load one patient, compute all windows, return metrics."""
+        # --- load only the target channel/band ----------------------------------
+        with np.load(dataset_path, mmap_mode="r") as npz:
             sig = np.asarray(
-                npz_file["data"][idx, cfg.target_channel, :, cfg.target_bandwidth],
+                npz["data"][idx, cfg.target_channel, :, cfg.target_bandwidth],
                 dtype=np.float64,
             )
+
         out = process_single_patient(
             patient_idx=idx,
             patient_signal=sig,
@@ -408,8 +415,19 @@ def process_dataset(
             tuning_max_dim=cfg.tuning_max_dim,
             tuning_rec_rate=cfg.tuning_rec_rate,
         )
-        gc.collect()
-        return idx, out
+
+        # ---------- make sure temp buffers really disappear ----------------------
+        try:
+            # Down-cast before shipping to the scheduler
+            for wsize in out:
+                out[wsize] = (
+                    out[wsize][0].astype(np.float32),  # metrics
+                    out[wsize][1].astype(np.float32),  # tuned (τ,m,ε)
+                )
+            return idx, out
+        finally:
+            gc.collect()
+            libc.malloc_trim(0)  # release pages to the OS
 
     # ------------------ remaining patients ----------------------------
     if n_pat > 1:
