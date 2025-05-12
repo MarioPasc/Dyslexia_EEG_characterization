@@ -196,7 +196,7 @@ def nested_evaluate(
         )
         best_params = [t["best_params"] for t in tuning]
         params_per_outer.append(best_params)
-        optuna_records.append([t["study"] for t in tuning])  # raw Study
+        # optuna_records.append([t["study"] for t in tuning])  # raw Study
 
         # ------------------- re-train & test ---------------------------- #
         est = MultiWindowEstimator(
