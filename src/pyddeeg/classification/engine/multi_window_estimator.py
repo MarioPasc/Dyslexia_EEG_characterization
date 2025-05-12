@@ -114,7 +114,7 @@ class MultiWindowEstimator(BaseEstimator, ClassifierMixin):
         n_jobs: int = 1,
         show_progress: bool = False,
         desc: str = "Windows",
-    ) -> "MultiWindowEstimator":
+    ) -> MultiWindowEstimator:
         """Fit each window-specific pipeline."""
         _, _, n_windows = _validate_dims(X, self.params_per_window)
 

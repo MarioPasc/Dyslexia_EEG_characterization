@@ -59,7 +59,16 @@ def _get_model_coef(pipe) -> np.ndarray:
 
     NaNs are filled when the innermost estimator lacks ``coef_``/``feature_importances_``.
     """
-    est = pipe.named_steps["classifier"]
+
+    # tolerate either naming convention
+    est = pipe.named_steps.get("model", pipe.named_steps.get("classifier"))
+    if est is None:
+        raise KeyError(
+            "Pipeline must contain a step named 'model' (new) or "
+            "'classifier' (legacy). Found steps: "
+            f"{list(pipe.named_steps.keys())}"
+        )
+
     if hasattr(est, "coef_"):
         raw = est.coef_.ravel()  # LogisticRegression, LinearSVM, …
     elif hasattr(est, "feature_importances_"):
