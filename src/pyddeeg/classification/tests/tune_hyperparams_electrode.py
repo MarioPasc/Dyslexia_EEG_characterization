@@ -205,10 +205,6 @@ def main() -> None:  # pragma: no cover
     # 1) turn outer_indices (list of 2-tuples of arrays) into dtype=object
     results["outer_indices"] = np.array(results["outer_indices"], dtype=object)
 
-    # 2) same for the perm_test clusters
-    clusters = results["perm_test"]["clusters"]
-    results["perm_test"]["clusters"] = np.array(clusters, dtype=object)
-
     # now save
     output_path = run_dir / "cv_results.npz"
     np.savez_compressed(output_path, **results)
