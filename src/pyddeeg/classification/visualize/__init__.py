@@ -1,0 +1,5 @@
+from pyddeeg.classification.visualize.vis_auc_clusters import plot_auc_clusters
+from pyddeeg.classification.visualize.vis_coefficients import plot_coeff_heat
+from pyddeeg.classification.visualize.vis_decision_heatmap import plot_decision_heat
+from pyddeeg.classification.visualize.vis_fold_auc_box import plot_fold_box
+from pyddeeg.classification.visualize.vis_feature_selection import plot_feature_sel

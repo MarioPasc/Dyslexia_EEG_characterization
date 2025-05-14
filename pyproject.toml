@@ -29,6 +29,7 @@ dependencies = [
   "nolitsa @ git+https://github.com/manu-mannattil/nolitsa.git",
   "numba",
   "statsmodels",
+  "seaborn",
 ]
 
 description = "A Python library that contains all the functions used to perform experiments on EEG data for the analysis and characterization of Developmental Dyslexia (DD)."
