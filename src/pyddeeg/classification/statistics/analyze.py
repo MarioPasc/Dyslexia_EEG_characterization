@@ -64,6 +64,11 @@ def analyze_results(
             feature_score=feature_score_ttest(sel, alpha=alpha),
         )
 
+    # analyze.py – just before np.savez_compressed
+    for k, v in list(stats.items()):
+        if not isinstance(v, np.ndarray):                 # dict, list, …
+            stats[k] = np.asarray(v, dtype=object)
+
     np.savez_compressed(out, **stats)  # type: ignore
     print(f"✔  Statistical report written to {out}")
 
