@@ -38,7 +38,7 @@ def _load(path: Path):
 
 
 def analyze_results(
-    results: Path, out: Path, n_perm: int, alpha: float, threads: int
+    results: Path, out: Path, n_perm: int, alpha: float, threads: int = 2
 ) -> None:
     """Load results and run statistical tests."""
     res = _load(results)

@@ -242,6 +242,7 @@ def main() -> None:  # pragma: no cover
         n_perm=10_000,
         alpha=0.05,
         out=run_dir / "stats.npz",
+        threads=threads,
     )
 
     logger.info("🎉 Job done.")
