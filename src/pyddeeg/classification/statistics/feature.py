@@ -45,9 +45,15 @@ def feature_selection_binomial_test(
     n_trials = np.prod(msk.shape[:2])  # folds × windows
     k = msk.shape[2]
 
-    succ = msk.sum((0, 1))
+    n_feat = msk.shape[2]
+    succ = msk.sum((0, 1))                          # selections per feature
+
+    # extract the *float* p-value from the BinomTestResult
     p_vals = np.array(
-        [binomtest(k=x, n=n_trials, p=1 / k, alternative="greater") for x in succ]
+        [binomtest(k=x, n=n_trials, p=1 / n_feat,
+                   alternative="greater").pvalue     # ← .pvalue
+         for x in succ],
+        dtype=float,
     )
     reject, p_fdr, _, _ = multipletests(p_vals, alpha=alpha, method=fdr_method)
 

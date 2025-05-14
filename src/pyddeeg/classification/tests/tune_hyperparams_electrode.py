@@ -202,16 +202,24 @@ def main() -> None:  # pragma: no cover
         n_jobs_windows=cfg.get("cv_jobs", -1),
         storage_dir=run_dir,
     )
-    # 1) turn outer_indices (list of 2-tuples of arrays) into dtype=object
-    results["outer_indices"] = np.array(results["outer_indices"], dtype=object)
+    # --- ensure ragged -> object arrays ------------------------------------
+    ragged_keys = [
+        "outer_indices",
+        "inner_indices",
+        "params_per_outer",
+        "per_fold_scores",
+        "optuna_study",
+    ]
+    for k in ragged_keys:
+        if k in results:
+            results[k] = np.asarray(results[k], dtype=object)
 
-    # 2) same for the perm_test clusters
-    clusters = results["perm_test"]["clusters"]
-    results["perm_test"]["clusters"] = np.array(clusters, dtype=object)
+    # optional: drop huge objects you never reload
+    results.pop("dataset_ref", None)
 
-    # now save
+    # -----------------------------------------------------------------------
     output_path = run_dir / "cv_results.npz"
-    np.savez_compressed(output_path, **results)
+    np.savez_compressed(output_path, **results)       # ← now succeeds
 
     loaded_npz = np.load(output_path, allow_pickle=True)
 
@@ -234,6 +242,7 @@ def main() -> None:  # pragma: no cover
         n_perm=10_000,
         alpha=0.05,
         out=run_dir / "stats.npz",
+        threads=threads,
     )
 
     logger.info("🎉 Job done.")

@@ -38,7 +38,7 @@ def _load(path: Path):
 
 
 def analyze_results(
-    results: Path, out: Path, n_perm: int, alpha: float, threads: int
+    results: Path, out: Path, n_perm: int, alpha: float, threads: int = 2
 ) -> None:
     """Load results and run statistical tests."""
     res = _load(results)
@@ -63,6 +63,11 @@ def analyze_results(
             feature_binom=feature_selection_binomial_test(sel, alpha=alpha),
             feature_score=feature_score_ttest(sel, alpha=alpha),
         )
+
+    # analyze.py – just before np.savez_compressed
+    for k, v in list(stats.items()):
+        if not isinstance(v, np.ndarray):                 # dict, list, …
+            stats[k] = np.asarray(v, dtype=object)
 
     np.savez_compressed(out, **stats)  # type: ignore
     print(f"✔  Statistical report written to {out}")
