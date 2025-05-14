@@ -94,6 +94,10 @@ rqa:            # ← Stage-2 template (can be used standalone)
   tuning_max_dim:   12        # max embedding dimension
   tuning_rec_rate:  0.15      # target recurrence rate for radius search
 
+  hilbert_transform:
+    use_hilbert: false
+    fs: 500
+    use: "phase"  # "phase" or "amplitude"
 
   # RQA parameters (identical to usual file)
   rqa_parameters:

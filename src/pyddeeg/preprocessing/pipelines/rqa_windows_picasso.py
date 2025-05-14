@@ -39,7 +39,7 @@ from pyddeeg.preprocessing.tools.rqa_toolbox.utils import iter_signal_windows
 from pyddeeg.preprocessing.tools.rqa_toolbox.rqa import compute_rqa_metrics_for_window
 from pyddeeg.preprocessing.pipelines import CHANNEL_NAME_TO_INDEX
 from pyddeeg.preprocessing.tools.rqa_toolbox.optimization.tuner import tune_window
-
+from pyddeeg.preprocessing.tools.hilbert_tr import hilbert_transform 
 # Add Dask imports
 from dask.distributed import as_completed
 from dask.distributed import Client, LocalCluster
@@ -188,6 +188,10 @@ class RQAConfig:
     dask_threads_per_worker: int = 1
     dask_memory_limit: str = "4GB"
 
+    # Hilbert-transform parameters
+    use_hilbert: bool = False          # master switch
+    hilbert_fs: int = 500              # sampling rate (Hz)
+    hilbert_use: str = "phase"         # "phase" | "amplitude"
 
 def load_config(yaml_path: str) -> RQAConfig:
     """
@@ -205,6 +209,12 @@ def load_config(yaml_path: str) -> RQAConfig:
     dask_n_workers = dask_cfg.get("n_workers", 4)
     dask_threads_worker = dask_cfg.get("threads_per_worker", 1)
     dask_mem_limit = dask_cfg.get("memory_limit", "4GB")
+
+    # ---------- Hilbert transform --------------------------------
+    hil_cfg       = cfg.get("hilbert_transform", {})
+    use_hilbert   = hil_cfg.get("use_hilbert", False)
+    hilbert_fs    = hil_cfg.get("fs", 500)
+    hilbert_use   = hil_cfg.get("use", "phase")
 
     # ---------- Channel name ↔ index ----------
     tgt_ch = cfg["target_channel"]
@@ -232,7 +242,7 @@ def load_config(yaml_path: str) -> RQAConfig:
         min_vertical_line=cfg["rqa_parameters"]["min_vertical_line"],
         min_white_vertical_line=cfg["rqa_parameters"]["min_white_vertical_line"],
         window_sizes=cfg["window_sizes"],
-        # ---- NEW: tuning flags --------------------------------------
+        # ---- Tuning flags --------------------------------------
         optimise_takens=cfg.get("optimise_takens", False),
         tuning_max_lag=cfg.get("tuning_max_lag", 100),
         tuning_max_dim=cfg.get("tuning_max_dim", 10),
@@ -244,6 +254,10 @@ def load_config(yaml_path: str) -> RQAConfig:
         dask_n_workers=dask_n_workers,
         dask_threads_per_worker=dask_threads_worker,
         dask_memory_limit=dask_mem_limit,
+        # Hilbert options
+        use_hilbert   = use_hilbert,
+        hilbert_fs    = hilbert_fs,
+        hilbert_use   = hilbert_use,
     )
 
 
@@ -265,6 +279,9 @@ def process_single_patient(  # unchanged signature
     tuning_max_lag: int,
     tuning_max_dim: int,
     tuning_rec_rate: float,
+    use_hilbert: bool,        
+    hilbert_fs: int,          
+    hilbert_use: str,         
 ) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
     """
     Compute the (metrics × windows) tensor **streamingly** so that at most
@@ -279,6 +296,12 @@ def process_single_patient(  # unchanged signature
 
     # ensure the raw signal is float64 & contiguous for Numba / pyRQA
     sig = np.ascontiguousarray(patient_signal, dtype=np.float64)
+
+    # ──  apply analytic-signal pre-processing, if requested ── 
+    if use_hilbert:
+        phase, amp = hilbert_transform(sig, fs=hilbert_fs, band=None)
+        sig = phase if hilbert_use.lower() == "phase" else amp
+        sig = np.ascontiguousarray(sig, dtype=np.float64)
 
     for w_size in window_sizes:
         stride = w_size // 2
@@ -371,6 +394,9 @@ def process_dataset(
         tuning_max_lag=config.tuning_max_lag,
         tuning_max_dim=config.tuning_max_dim,
         tuning_rec_rate=config.tuning_rec_rate,
+        use_hilbert   = config.use_hilbert,        
+        hilbert_fs    = config.hilbert_fs,
+        hilbert_use   = config.hilbert_use,
     )
 
     for wsize, (met0, tak0) in first.items():
@@ -414,6 +440,9 @@ def process_dataset(
             tuning_max_lag=cfg.tuning_max_lag,
             tuning_max_dim=cfg.tuning_max_dim,
             tuning_rec_rate=cfg.tuning_rec_rate,
+            use_hilbert   = cfg.use_hilbert,       
+            hilbert_fs    = cfg.hilbert_fs,
+            hilbert_use   = cfg.hilbert_use,
         )
 
         # ---------- make sure temp buffers really disappear ----------------------
