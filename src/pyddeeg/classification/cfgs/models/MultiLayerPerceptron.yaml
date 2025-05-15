@@ -1,0 +1,9 @@
+base_estimator: sklearn.neural_network.MLPClassifier
+
+hyperparameters:
+  hidden_layer_sizes: {values: [(64,), (128,), (64, 32), (128, 64)], type: categorical}
+  activation:         {values: ['relu', 'tanh'], type: categorical}
+  alpha:              {min: 1e-6, max: 1e-2, type: float}      # ℓ2 regularization
+  learning_rate_init: {min: 1e-4, max: 1e-1, type: float}
+  batch_size:         {min: 16,   max: 256, type: integer}
+  max_iter:           {min: 200,  max: 1500, type: integer}

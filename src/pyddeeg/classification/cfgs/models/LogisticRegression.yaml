@@ -1,0 +1,8 @@
+base_estimator: sklearn.linear_model.LogisticRegression
+
+hyperparameters:
+  penalty:           {values: ['l1', 'l2'], type: categorical}
+  C:                 {min: 1e-3, max: 1e3,  type: float}
+  class_weight:      {values: [null, 'balanced'], type: categorical}
+  max_iter:          {min: 100,  max: 2000, type: integer}
+  solver:            {values: ['saga'], type: categorical}   # supports both penalties + proba

@@ -1,0 +1,6 @@
+base_estimator: sklearn.ensemble.AdaBoostClassifier
+
+hyperparameters:
+  n_estimators: {min: 50,  max: 800, type: integer}
+  learning_rate:{min: 1e-3, max: 2.0, type: float}
+  algorithm:    {values: ['SAMME', 'SAMME.R'], type: categorical}

@@ -1,0 +1,7 @@
+base_estimator: sklearn.svm.SVC
+
+hyperparameters:
+  C:                 {min: 1e-3, max: 1e3,  type: float}
+  gamma:             {min: 1e-4, max: 1e1,  type: float}
+  probability:       {values: [true], type: categorical}      # keep true for pred_proba
+  class_weight:      {values: [null, 'balanced'], type: categorical}
